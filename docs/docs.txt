@@ -1,0 +1,575 @@
+# Comprehensive Data Analysis Tool (CDAT) - Streamlit Documentation
+
+## Table of Contents
+
+1.  [Introduction](#introduction)
+2.  [Getting Started](#getting-started)
+    *   [Dependencies](#dependencies)
+    *   [File Structure](#file-structure)
+    *   [Running the Application](#running-the-application)
+3.  [Main Application Interface (`cdat_app.py`)](#main-application-interface-cdat_apppy)
+    *   [Title and Welcome](#title-and-welcome)
+    *   [Sidebar](#sidebar)
+        *   [Navigation](#navigation)
+        *   [Current Status](#current-status)
+    *   [Session State Concept](#session-state-concept)
+4.  [Page: 1 - Load Data](#page-1---load-data)
+    *   [Purpose](#purpose)
+    *   [File Uploader](#file-uploader)
+    *   [File Details](#file-details)
+    *   [CSV / Text File Options](#csv--text-file-options)
+        *   [Delimiter](#delimiter)
+        *   [Header Row Number (CSV)](#header-row-number-csv)
+        *   [Comment Character](#comment-character)
+        *   [Load CSV/Text Data Button](#load-csvtext-data-button)
+    *   [Excel File Options](#excel-file-options)
+        *   [Select Sheet](#select-sheet)
+        *   [Header Row Number (Excel)](#header-row-number-excel)
+        *   [Load Excel Data Button](#load-excel-data-button)
+    *   [Data Preview (Load Page)](#data-preview-load-page)
+5.  [Page: 2 - Inspect Data](#page-2---inspect-data)
+    *   [Purpose](#purpose-1)
+    *   [Check for Loaded Data](#check-for-loaded-data)
+    *   [Inspection Action Selection](#inspection-action-selection)
+    *   [Action-Specific Inputs](#action-specific-inputs)
+    *   [Results Display](#results-display)
+        *   [View Head/Tail](#view-headtail)
+        *   [Show Info](#show-info)
+        *   [Show Descriptive Statistics](#show-descriptive-statistics)
+        *   [List Column Names and Types](#list-column-names-and-types)
+        *   [Show Unique Values](#show-unique-values)
+        *   [Count Values](#count-values)
+        *   [Check for Missing Values](#check-for-missing-values)
+    *   [Data Preview (Inspect Page)](#data-preview-inspect-page)
+6.  [Page: 3 - Clean Data](#page-3---clean-data)
+    *   [Purpose](#purpose-2)
+    *   [Check for Loaded Data](#check-for-loaded-data-1)
+    *   [Current Missing Values Summary](#current-missing-values-summary)
+    *   [Cleaning Action Selection](#cleaning-action-selection)
+    *   [Handle Missing Values](#handle-missing-values)
+        *   [Method (Drop Rows / Fill)](#method-drop-rows--fill)
+        *   [Drop Rows Options](#drop-rows-options)
+        *   [Fill Values Options](#fill-values-options)
+    *   [Remove Duplicate Rows](#remove-duplicate-rows)
+        *   [Subset Columns](#subset-columns)
+        *   [Keep Option](#keep-option)
+        *   [Apply Button](#apply-button)
+    *   [Drop Columns with High Missing %](#drop-columns-with-high-missing-)
+        *   [Threshold Slider](#threshold-slider)
+        *   [Preview and Apply Button](#preview-and-apply-button)
+    *   [Data Preview & Shape (Clean Page)](#data-preview--shape-clean-page)
+7.  [Page: 4 - Transform Data](#page-4---transform-data)
+    *   [Purpose](#purpose-3)
+    *   [Check for Loaded Data](#check-for-loaded-data-2)
+    *   [Transformation Action Selection](#transformation-action-selection)
+    *   [Filter Rows (by condition/query)](#filter-rows-by-conditionquery)
+        *   [Query Syntax Explanation](#query-syntax-explanation)
+        *   [Query Input & Apply Button](#query-input--apply-button)
+    *   [Select Columns (Keep)](#select-columns-keep)
+    *   [Drop Columns](#drop-columns)
+    *   [Rename Column](#rename-column)
+    *   [Add Column (Basic Calculation)](#add-column-basic-calculation)
+    *   [Sort Data](#sort-data)
+    *   [Change Column Type](#change-column-type)
+    *   [Data Preview & Shape (Transform Page)](#data-preview--shape-transform-page)
+8.  [Page: 5 - Analyze Data](#page-5---analyze-data)
+    *   [Purpose](#purpose-4)
+    *   [Check for Loaded Data](#check-for-loaded-data-3)
+    *   [Analysis Action Selection](#analysis-action-selection)
+    *   [Correlations (numeric columns)](#correlations-numeric-columns)
+        *   [Column Selection & Output](#column-selection--output)
+    *   [Group By and Aggregate](#group-by-and-aggregate)
+        *   [Group By Columns](#group-by-columns)
+        *   [Aggregate Columns](#aggregate-columns)
+        *   [Aggregation Functions](#aggregation-functions)
+        *   [Advanced Options](#advanced-options)
+        *   [Calculate Button & Results](#calculate-button--results)
+        *   [Download Aggregation Results](#download-aggregation-results)
+        *   [Replace Current Data Option](#replace-current-data-option)
+    *   [Data Preview (Analyze Page)](#data-preview-analyze-page)
+9.  [Page: 6 - Interpolate Data](#page-6---interpolate-data)
+    *   [Purpose](#purpose-5)
+    *   [Check for Loaded Data](#check-for-loaded-data-4)
+    *   [Goal Selection (Generate File vs. Evaluate Single Point)](#goal-selection-generate-file-vs-evaluate-single-point)
+    *   [Workflow: Generate Interpolated Points (for Download)](#workflow-generate-interpolated-points-for-download)
+        *   [Section 1: Mode & Input Data](#section-1-mode--input-data)
+        *   [Section 2: Method & Parameters](#section-2-method--parameters)
+        *   [Section 3: Output Points Specification](#section-3-output-points-specification)
+        *   [Section 4: Execute & Download](#section-4-execute--download)
+    *   [Workflow: Evaluate Single Point (1D Only)](#workflow-evaluate-single-point-1d-only)
+        *   [Section 1: Data & Method](#section-1-data--method)
+        *   [Section 2: Extrapolation & Input](#section-2-extrapolation--input)
+        *   [Predict Button & Result](#predict-button--result)
+10. [Page: 7 - Save Data](#page-7---save-data)
+    *   [Purpose](#purpose-6)
+    *   [Check for Loaded Data](#check-for-loaded-data-5)
+    *   [Data Status Display](#data-status-display)
+    *   [Output Format and Options](#output-format-and-options)
+        *   [Format Selection (CSV/Excel)](#format-selection-csvexcel)
+        *   [Output Filename](#output-filename)
+        *   [Format-Specific Options (Delimiter, Index, Sheet Name)](#format-specific-options-delimiter-index-sheet-name)
+    *   [Download Button](#download-button)
+    *   [Data Preview (Save Page)](#data-preview-save-page)
+
+---
+
+## 1. Introduction
+
+The Comprehensive Data Analysis Tool (CDAT) is an interactive web application built with Streamlit designed to simplify common data manipulation, cleaning, analysis, and interpolation tasks. It provides a graphical user interface (GUI) for users like data scientists, engineers, researchers, and students to work with tabular data without extensive coding.
+
+The tool guides users through a logical workflow, managed via a sidebar menu, allowing them to load data, inspect it, perform cleaning and transformations, conduct basic analysis and interpolation, and finally save the processed results.
+
+---
+
+## 2. Getting Started
+
+### Dependencies
+
+To run CDAT, you need Python installed along with the following libraries:
+
+*   `streamlit`: For the web application framework.
+*   `pandas`: For core data manipulation (DataFrames).
+*   `numpy`: For numerical operations (used by Pandas/SciPy).
+*   `scipy`: For scientific computing, specifically the interpolation module.
+*   `openpyxl`: Required by Pandas for reading/writing modern Excel `.xlsx` files.
+*   `xlrd`: Required by Pandas for reading older Excel `.xls` files (less critical now).
+
+You can install them using pip:
+```bash
+pip install streamlit pandas numpy scipy openpyxl xlrd
+Use code with caution.
+Markdown
+File Structure
+The application expects the following directory structure:
+
+cdat_streamlit_app/
+│
+├── cdat_app.py            # Main application script
+│
+└── pages/                  # Directory containing individual page scripts
+    ├── 1_Load_Data.py
+    ├── 2_Inspect_Data.py
+    ├── 3_Clean_Data.py
+    ├── 4_Transform_Data.py
+    ├── 5_Analyze_Data.py
+    ├── 6_Interpolate_Data.py
+    └── 7_Save_Data.py
+Use code with caution.
+Place all the provided .py files into this structure.
+
+Running the Application
+Open your terminal or command prompt.
+Navigate to the directory containing the cdat_streamlit_app folder.
+Navigate into the cdat_streamlit_app directory: cd path/to/cdat_streamlit_app
+Execute the following command:
+streamlit run cdat_app.py
+Use code with caution.
+Bash
+Streamlit will start a local web server and should automatically open the application in your default web browser.
+3. Main Application Interface (cdat_app.py)
+This is the landing page when you first run the application.
+
+Title and Welcome
+Displays the application title: "📊 Comprehensive Data Analysis Tool (CDAT)".
+Provides a brief welcome message and instructions on how to get started using the sidebar navigation.
+Sidebar
+The sidebar on the left is the primary navigation method.
+
+Navigation
+Lists all available pages (Load Data, Inspect Data, etc.) as clickable links. Clicking a link takes you to that specific page/functionality. Pages are typically numbered to suggest a workflow order.
+Current Status
+Data Loaded Status: Shows whether data is currently loaded into the application's memory.
+If data is loaded: Displays a success message showing the number of rows and columns ({rows} rows, {columns} columns). It also shows the filename of the originally loaded data (From: {filename}) and might display a warning if the data has been modified since loading.
+If no data is loaded: Displays an informational message prompting the user to go to the "Load Data" page.
+Session State Concept
+CDAT uses Streamlit's st.session_state to store the main data table (DataFrame) in memory. This allows the data you load on the "Load Data" page to persist and be available for use on all other pages (Inspect, Clean, Transform, etc.) without needing to reload it constantly. Any modifications made on pages like "Clean Data" or "Transform Data" directly update this stored DataFrame. The df_modified flag tracks whether any changes have occurred since the initial load.
+
+4. Page: 1 - Load Data
+Purpose
+This page is the starting point for importing your data into the CDAT application. It supports loading data from common tabular file formats like CSV and Excel.
+
+File Uploader
+Widget: st.file_uploader
+Functionality: Allows you to either:
+Drag and drop a single file directly onto the designated area.
+Click the "browse files" button to open your system's file explorer and select a file.
+Accepted Types: .csv, .xlsx, .xls, .txt. The tool attempts to handle these based on their extension and content.
+Help Text: Provides a reminder of the supported file types.
+File Details
+Display: Once a file is uploaded, this section shows basic information:
+FileName: The name of the uploaded file.
+FileType: The MIME type detected by the browser/system (e.g., text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet).
+FileSize: The size of the file in bytes.
+CSV / Text File Options
+These options appear if the uploaded file has a .csv or .txt extension, or if its detected type is text-based.
+
+Delimiter
+Widget: st.text_input
+Purpose: To tell the application which character separates values within each row of your text file.
+Input: Enter the single character used as a separator.
+Common Values: , (comma), ; (semicolon), | (pipe).
+Special Input: For a Tab delimiter, you must type \t (backslash followed by 't').
+Default: , (comma). Pressing Enter without typing uses the default.
+Importance: Crucial for correctly splitting lines into columns. If incorrect, data will load improperly (e.g., into a single column).
+Header Row Number (CSV)
+Widget: st.number_input
+Purpose: To specify which row in the file contains the column names (headers).
+Input: Enter the row number. Remember it's 0-based, meaning the first row is row 0, the second is row 1, and so on.
+Default: 0. Assumes the very first line contains the headers.
+No Header: If your file has no header row, you would typically set this to a row after your data (which effectively loads data without headers, Pandas assigns default numerical headers) or handle it later in the Transform step. Note: The current UI doesn't explicitly offer a "None" option, setting it to 0 is standard if the first row is the header.
+Comment Character
+Widget: st.text_input
+Purpose: To specify a character that indicates the rest of the line should be ignored during loading. Useful for files containing metadata or comments.
+Input: Enter the single character (e.g., #, !).
+Default: #.
+Disable: Leave the input blank if your file doesn't use comments or if lines starting with '#' are actual data.
+Load CSV/Text Data Button
+Widget: st.button
+Action: When clicked, triggers the data loading process using Pandas' read_csv function with the specified Delimiter, Header Row, and Comment Character options.
+On Success: Stores the loaded data into st.session_state.df, updates the sidebar status, resets the df_modified flag, displays a success message, and shows a preview of the first few rows.
+On Failure: Displays an error message suggesting potential causes (wrong delimiter, incorrect header row, file encoding issues, corrupted file).
+Excel File Options
+These options appear if the uploaded file has an .xlsx or .xls extension.
+
+Select Sheet
+Widget: st.selectbox
+Purpose: To choose which specific sheet within the Excel workbook contains the data you want to load.
+Functionality: Automatically lists all available sheet names found in the uploaded file. You select one from the dropdown.
+Note: Requires necessary libraries (openpyxl for .xlsx, xlrd for .xls) to be installed. An error message will appear if they are missing.
+Header Row Number (Excel)
+Widget: st.number_input
+Purpose: Same as for CSV - specify the 0-based row index containing column names within the selected sheet.
+Default: 0.
+Load Excel Data Button
+Widget: st.button
+Action: When clicked, triggers loading using Pandas' read_excel function, targeting the selected Sheet and using the specified Header Row.
+On Success: Stores data in st.session_state.df, updates status, resets modification flag, shows success message and preview.
+On Failure: Displays an error message (e.g., sheet not found, header incorrect, library issues).
+Data Preview (Load Page)
+Widget: st.dataframe
+Purpose: After successful loading (via either CSV or Excel button), this section displays the first 5 rows (.head()) of the loaded DataFrame, allowing you to quickly verify that the data looks structured correctly.
+5. Page: 2 - Inspect Data
+Purpose
+This page allows you to explore the characteristics of the currently loaded DataFrame without making any changes to the data itself.
+
+Check for Loaded Data
+Functionality: At the top of the page, it checks if data exists in st.session_state.df. If not, it displays a warning message prompting the user to go to the "Load Data" page first and stops further execution on this page.
+Inspection Action Selection
+Widget: st.radio (in the left column)
+Purpose: Presents a list of different ways to inspect the data. You choose one action at a time.
+Options:
+View Head (first N rows): Show the top rows.
+View Tail (last N rows): Show the bottom rows.
+Show Info (column types, non-null counts): Display technical summary (like df.info()).
+Show Descriptive Statistics: Calculate summary stats (mean, std, min, max, etc.).
+List Column Names and Types: Show just the column names and their data types (dtype).
+Show Unique Values in a Column: List the distinct values within a chosen column.
+Count Values in a Column: Show how many times each unique value appears in a chosen column.
+Check for Missing Values (NaNs/NaTs): Summarize missing data counts per column.
+Action-Specific Inputs
+Functionality: Depending on the action selected in the radio button, additional input widgets may appear in the left column:
+Number of rows to show (st.number_input): Appears for "View Head" and "View Tail". Default is 5.
+Select Column (st.selectbox): Appears for "Show Unique Values" and "Count Values". Lists all columns from the loaded data.
+Include statistics for: (st.radio): Appears for "Show Descriptive Statistics". Allows choosing between stats for only numeric columns or attempting stats for all columns (which includes counts, unique, top, freq for non-numeric).
+Results Display
+Location: The right column is dedicated to showing the output of the selected inspection action.
+Content (based on action):
+View Head/Tail:
+Uses st.dataframe to display the specified number of top/bottom rows.
+Show Info:
+Captures the output of Pandas' df.info() method (which includes column names, non-null counts, data types, and memory usage) and displays it as preformatted text using st.text.
+Show Descriptive Statistics:
+Calls Pandas' df.describe() method.
+If "Numeric only" is chosen, calculates count, mean, std, min, 25%/50%/75% percentiles, and max for numeric columns.
+If "All columns" is chosen, it adds count, unique, top (most frequent value), and freq (frequency of top value) for non-numeric columns.
+Results are displayed using st.dataframe.
+List Column Names and Types:
+Extracts column names and their data types (df.dtypes) and presents them neatly in a two-column table using st.dataframe.
+Show Unique Values:
+Retrieves the unique values from the selected column using df[column].unique().
+Displays the list of unique values using st.write. Includes the total count of unique values.
+Truncates the output if there are more than 1000 unique values to prevent browser slowdown, showing only the first 1000.
+Count Values:
+Calculates the frequency of each unique value in the selected column using df[column].value_counts().
+Displays the results (value and its count) in a table using st.dataframe.
+Check for Missing Values:
+Calculates the number of missing values (NaN for numeric/object, NaT for datetime) per column using df.isna().sum().
+If missing values are found:
+Displays a table (st.dataframe) showing only the columns that have missing values and their respective counts.
+Displays the total count of missing values across the entire DataFrame and the percentage this represents of all data cells, using st.metric for emphasis.
+If no missing values are found: Displays a success message.
+Data Preview (Inspect Page)
+Widget: st.dataframe
+Purpose: Located at the bottom, it consistently shows the first 5 rows of the current data, reinforcing the state of the DataFrame being inspected.
+6. Page: 3 - Clean Data
+Purpose
+This page provides tools to modify the loaded data by handling common data quality issues like missing values (NaNs/NaTs) and duplicate entries. Actions taken on this page permanently change the data stored in st.session_state.df.
+
+Check for Loaded Data
+Ensures data is loaded before proceeding, displaying a warning otherwise.
+Current Missing Values Summary
+Before presenting cleaning options, it shows a summary (using st.dataframe) of columns that currently contain missing values and their counts, giving context for the cleaning actions. Displays a success message if no missing values are found.
+Cleaning Action Selection
+Widget: st.radio (in the left column)
+Purpose: Choose the main cleaning task.
+Options:
+Handle Missing Values: Address NaN/NaT entries.
+Remove Duplicate Rows: Delete rows that are identical.
+Drop Columns with High Missing %: Remove columns that are mostly empty.
+Handle Missing Values
+This section appears if "Handle Missing Values" is selected.
+
+Method (Drop Rows / Fill)
+Widget: st.radio
+Purpose: Choose the strategy for dealing with missing data.
+Drop Rows...: Remove entire rows containing missing values.
+Fill missing values: Replace missing values with a calculated or specified value.
+Drop Rows Options
+Widget: st.multiselect ("Check for missing values only in these columns...")
+Purpose: Optionally specify a subset of columns. If columns are selected here, only rows with missing values in those specific columns will be dropped. If left empty, rows with a missing value in any column are dropped.
+Apply Button: st.button("Apply Drop Rows") executes the df.dropna() operation with the chosen subset, updates the DataFrame in st.session_state, sets the df_modified flag to True, reports the number of rows dropped, and refreshes the page (st.rerun).
+Fill Values Options
+Widget: st.multiselect ("Select columns to fill...")
+Purpose: Choose which column(s) will have their missing values filled.
+Widget: st.selectbox ("Fill Strategy:")
+Purpose: Select the method for calculating or determining the fill value.
+Specific Value: Fill with a user-provided value.
+Mean: Fill numeric columns with their mean.
+Median: Fill numeric columns with their median.
+Mode: Fill any column with its most frequent value (the first mode if there are ties).
+Forward Fill (ffill): Fill missing values using the previous valid observation in the column.
+Backward Fill (bfill): Fill missing values using the next valid observation in the column.
+Conditional Inputs:
+st.text_input ("Value to fill with:"): Appears only for "Specific Value" strategy. The tool attempts to convert this input to match the column's type where possible.
+st.number_input ("Limit consecutive fills..."): Appears only for "ffill" and "bfill". Allows limiting how many consecutive NaNs are filled by the propagation (0 or None means no limit).
+Apply Button: st.button("Apply Fill Values") executes the fill operation based on the selected strategy and columns. It iterates through chosen columns, applies the filling (using methods like fillna(), ffill(), bfill()), handles potential type errors (especially for "Specific Value"), updates the DataFrame in st.session_state, sets df_modified to True, reports the number of values filled and any columns skipped due to errors or incompatibility, and refreshes the page.
+Remove Duplicate Rows
+This section appears if "Remove Duplicate Rows" is selected.
+
+Subset Columns
+Widget: st.multiselect ("Check duplicates based on these columns only...")
+Purpose: Optionally specify which columns to consider when identifying duplicates. If empty, rows must be identical across all columns to be considered duplicates.
+Keep Option
+Widget: st.radio ("Which occurrence to keep?")
+Purpose: When duplicates are found, decide which one to keep.
+first: Keep the first occurrence encountered.
+last: Keep the last occurrence encountered.
+Apply Button
+Widget: st.button("Apply Remove Duplicates")
+Functionality: First checks and reports the number of duplicates found based on the subset criteria. If duplicates exist, clicking the button executes df.drop_duplicates() with the chosen subset and keep options, updates the DataFrame in st.session_state, sets df_modified to True, reports how many rows were removed, and refreshes the page.
+Drop Columns with High Missing %
+This section appears if "Drop Columns with High Missing %" is selected.
+
+Threshold Slider
+Widget: st.slider
+Purpose: Set the percentage threshold for missing values. Columns where the proportion of missing values exceeds this threshold will be targeted for removal.
+Range: 0% to 100%. Default is 50%.
+Preview and Apply Button
+Functionality: Calculates which columns currently exceed the threshold and displays a warning listing them.
+Widget: st.button("Apply Drop Columns...")
+Action: Executes df.dropna(axis=1, thresh=...) where thresh is calculated based on the percentage. This drops the identified columns, updates the DataFrame in st.session_state, sets df_modified to True, reports which columns were dropped, and refreshes the page.
+Data Preview & Shape (Clean Page)
+Widgets: st.dataframe, st.caption
+Purpose: Shows the first 5 rows of the data after the cleaning action has been applied and confirms the new shape (rows, columns) of the DataFrame.
+7. Page: 4 - Transform Data
+Purpose
+This page offers tools to reshape the data, select or modify columns, sort rows, and perform basic calculations to create new columns. Actions taken on this page permanently change the data stored in st.session_state.df.
+
+Check for Loaded Data
+Ensures data is loaded before proceeding.
+Transformation Action Selection
+Widget: st.selectbox
+Purpose: Choose the primary transformation task from the dropdown list. Requires a selection to proceed.
+Options: Filter Rows, Select Columns, Drop Columns, Rename Column, Add Column, Sort Data, Change Column Type.
+Filter Rows (by condition/query)
+Purpose: Select a subset of rows based on a logical condition.
+Query Syntax Explanation:
+Provides guidance on writing filter conditions using Pandas' query() syntax. Explains operators (==, >, &, |, ~), string quoting, using backticks (``) for column names with spaces/special characters, and functions like .isnull(), `.notnull()`, `.isin()`. Includes an example.
+Query Input & Apply Button:
+Widget: st.text_area ("Enter Query Condition:") where you type the filter string.
+Widget: st.button("Apply Filter") executes df.query() with the provided string. Updates the DataFrame in st.session_state, sets df_modified to True, reports the number of rows kept, warns if the result is empty, and handles/reports syntax errors. Refreshes the page on success.
+Select Columns (Keep)
+Purpose: Keep only specified columns, discarding all others.
+Widget: st.multiselect ("Choose columns to keep...") to select the desired columns.
+Widget: st.button("Apply Column Selection") performs the selection (equivalent to df = df[cols_to_keep]), updates st.session_state, sets df_modified, reports success, and refreshes.
+Drop Columns
+Purpose: Remove specified columns from the DataFrame.
+Widget: st.multiselect ("Choose columns to drop...") to select columns for removal.
+Widget: st.button("Apply Drop Columns") executes df.drop(columns=...), updates st.session_state, sets df_modified, reports the dropped columns, and refreshes.
+Rename Column
+Purpose: Change the name of a single existing column.
+Widget: st.selectbox ("Select column to rename:") to choose the target column.
+Widget: st.text_input ("Enter new name...") to provide the desired new name.
+Widget: st.button("Apply Rename") checks if the new name is valid (not blank, different from old, doesn't already exist), executes df.rename(), updates st.session_state, sets df_modified, reports success, and refreshes.
+Add Column (Basic Calculation)
+Purpose: Create a new column based on simple arithmetic (+, -, *, /) between two existing numeric columns.
+Widgets:
+st.text_input ("Enter name for the new column:")
+st.selectbox ("Select operation:")
+st.selectbox ("Select FIRST numeric column:") - Lists only numeric columns.
+st.selectbox ("Select SECOND numeric column:") - Lists only numeric columns.
+st.checkbox ("Overwrite?"): Appears if the new name already exists.
+Widget: st.button("Apply Calculation") converts selected columns to numeric (coercing errors), performs the chosen operation (handling division by zero by producing NaN), assigns the result to the new/existing column name, updates st.session_state, sets df_modified, reports success/warnings about NaNs, and refreshes.
+Sort Data
+Purpose: Reorder the rows based on the values in one or more columns.
+Widgets:
+st.multiselect ("Select column(s) to sort by..."): Selection order determines sorting priority.
+st.radio ("Sort 'Column': Ascending/Descending"): Appears for each selected sort column to set the direction.
+st.radio ("Place missing values:"): Choose whether NaNs appear first or last.
+Widget: st.button("Apply Sort") executes df.sort_values() with the specified columns, directions, and NaN placement. Updates st.session_state, sets df_modified, reports success, and refreshes.
+Change Column Type
+Purpose: Convert the data type of a column (e.g., from text/object to numeric or datetime).
+Widgets:
+st.selectbox ("Select column to change type:")
+Current Type Display: Shows the column's current dtype.
+st.selectbox ("Select new data type:"): Options include numeric (float/int), string (object), datetime, boolean.
+Widget: st.button("Apply Type Change") attempts the conversion:
+numeric: Uses pd.to_numeric(errors='coerce'). Tries converting to int if possible (no NaNs, whole numbers).
+string: Uses .astype(str).
+datetime: Uses pd.to_datetime(errors='coerce', infer_datetime_format=True).
+boolean: Uses a custom mapping for common true/false strings/numbers, coercing others to pd.NA (nullable boolean).
+Updates st.session_state, sets df_modified, reports success/warnings about values that failed conversion (became NaN/NaT/NA), and refreshes.
+Data Preview & Shape (Transform Page)
+Widgets: st.dataframe, st.caption
+Purpose: Shows the first 5 rows and the current shape after the transformation action.
+8. Page: 5 - Analyze Data
+Purpose
+This page allows you to perform calculations and generate summaries from your data, primarily without modifying the underlying DataFrame stored in st.session_state (except for the optional "Replace Data" feature in GroupBy).
+
+Check for Loaded Data
+Ensures data is loaded before proceeding.
+Analysis Action Selection
+Widget: st.selectbox
+Purpose: Choose the type of analysis.
+Options:
+Correlations (numeric columns): Calculate how strongly numeric variables are linearly related.
+Group By and Aggregate: Summarize data based on groups.
+Correlations (numeric columns)
+Purpose: Computes the Pearson correlation coefficient between pairs of numeric columns.
+Column Selection & Output:
+Checks if at least two numeric columns exist.
+Widget: st.multiselect allows choosing which numeric columns to include (defaults to all).
+Displays the resulting correlation matrix using st.dataframe.
+Applies heatmap styling (.style.background_gradient) for easier visual interpretation (colors indicate strength/direction of correlation). If styling fails, it displays a plain formatted table. Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation), with 0 indicating no linear correlation.
+Group By and Aggregate
+Purpose: Group rows based on unique values (or combinations) in specified columns, then calculate summary statistics for other columns within each group.
+Group By Columns:
+Widget: st.multiselect ("Select column(s) to GROUP BY:") to choose the categorical or key columns that define the groups.
+Aggregate Columns:
+Widget: st.multiselect ("Select column(s) to AGGREGATE:") to choose the columns for which you want statistics calculated (often numeric, but functions like count, nunique, first, last work on any type). Defaults suggest numeric columns not used for grouping.
+Aggregation Functions:
+Widget: st.multiselect ("Select aggregation function(s):") to choose how to summarize the aggregate columns within each group (e.g., mean, median, sum, count, size, std, var, min, max, nunique, first, last). Defaults to mean and count.
+Advanced Options:
+Widget: st.expander containing options like:
+dropna: Whether to exclude groups where the key value in the grouping column(s) is missing (NaN/NaT). Default is False (keep NaN groups).
+Calculate Button & Results:
+Widget: st.button("Calculate Aggregation") executes df.groupby(...).agg(...) using the selected columns and functions.
+Handles potential multi-level column headers resulting from multiple aggregation functions by flattening them (e.g., Value_mean, Value_std).
+Displays the resulting aggregated table using st.dataframe.
+Download Aggregation Results:
+Widget: st.download_button appears after successful aggregation.
+Action: Allows downloading the aggregated results table (not the original data) as a CSV file.
+Replace Current Data Option:
+Widgets: st.checkbox, st.button("Confirm Replace Data")
+Purpose: Provides an optional way to replace the main DataFrame in st.session_state with the result of the aggregation.
+Caution: This is a destructive action for the main dataset and should be used carefully. If confirmed, it updates st.session_state.df, sets df_modified, reports the replacement, and refreshes the application.
+Data Preview (Analyze Page)
+Widget: st.dataframe
+Purpose: Shows the first 5 rows of the main DataFrame (which is usually unchanged by this page, unless the "Replace Data" option was used in GroupBy).
+9. Page: 6 - Interpolate Data
+Purpose
+This page focuses on estimating unknown values that fall between known data points in the loaded dataset. It provides two main workflows: generating a downloadable file containing many interpolated points, or predicting the Y value for a single X input (in 1D mode only). Interpolation results are typically saved to a new file and do not modify the main DataFrame.
+
+Check for Loaded Data
+Ensures data is loaded before proceeding.
+Goal Selection (Generate File vs. Evaluate Single Point)
+Widget: st.radio
+Purpose: Choose the primary objective for this page visit. This selection determines which set of subsequent options is displayed.
+Generate Interpolated Points (for Download): For creating a dataset of interpolated values over a range or at specified points.
+Evaluate Single Point (1D Only): For quickly finding the estimated Y value corresponding to a single X value, using 1D interpolation.
+Workflow: Generate Interpolated Points (for Download)
+This workflow appears if "Generate..." is selected.
+
+Section 1: Mode & Input Data
+Widget: st.radio ("Interpolation Mode:") Choose 1D, N-D Scattered Data, or N-D Regular Grid based on how the relevant data is structured in your main DataFrame.
+Widgets: st.selectbox / st.multiselect appear conditionally to select the input columns from the main DataFrame (X/Y for 1D, Coordinate/Value columns for N-D).
+Section 2: Method & Parameters
+Widget: st.selectbox ("Method:") Choose the specific interpolation algorithm (e.g., linear, cubic, rbf). Available options depend on the selected Mode.
+Widget: st.expander ("RBF Parameters"): Appears only for scattered mode with rbf method. Contains options for Kernel, Epsilon, and Smooth factor. Defaults are usually sufficient.
+Widget: st.expander ("Extrapolation & Fill Options"):
+st.checkbox ("Allow Extrapolation"): Decide whether to estimate values outside the original data's range.
+st.selectbox ("Fill value..."): Choose how to handle points outside the domain (nan, edge (if applicable), number).
+st.number_input: Appears if "number" is chosen for the fill value.
+Section 3: Output Points Specification
+Purpose: Define the locations (X values or coordinates) where you want the interpolation performed.
+Widget: st.selectbox ("How to specify output points?")
+Options:
+Upload a file...:
+Widget: st.file_uploader to upload a CSV/Excel/Txt file containing the desired X values or coordinates.
+Widgets: Inputs for Delimiter and Header row for this points file.
+Widgets: st.selectbox / st.multiselect to specify which columns in the uploaded points file correspond to the required X or coordinate dimensions.
+Generate evenly spaced points (1D): (1D Mode only)
+Widget: st.number_input to specify how many points to generate between the min/max of the input X column.
+Generate points with specific step (1D): (1D Mode only)
+Widget: st.number_input to specify the step size between points generated between the min/max of the input X column.
+Generate points on a new grid: (N-D Modes, also available for 1D)
+Widgets: Multiple st.number_input fields (Min, Max, Num Points) appear for each dimension required by the selected input coordinate columns. Allows defining a custom rectangular grid range and resolution.
+Section 4: Execute & Download
+Widget: st.button("Run Interpolation & Prepare Download")
+Action: When clicked (and all required inputs are provided):
+Gathers all settings.
+Prepares the input data (handles NaNs, sorts/uniques for 1D).
+Generates or reads the array of points where interpolation is requested.
+Calls the appropriate SciPy interpolation function (interp1d, RegularGridInterpolator, griddata, Rbf) based on mode and method.
+Handles extrapolation and fill values according to settings.
+Combines the output points and the calculated interpolated values into a new Pandas DataFrame.
+Displays a preview of the first few rows of the results DataFrame.
+Enables a st.download_button to save this results DataFrame as a CSV file.
+Error Handling: Catches and displays errors that might occur during data preparation, point generation, or the SciPy interpolation call itself.
+Workflow: Evaluate Single Point (1D Only)
+This workflow appears if "Evaluate..." is selected.
+
+Section 1: Data & Method
+Purpose: Select the 1D data columns and the interpolation method to use for the prediction.
+Widgets: st.selectbox for X column, Y column, and Method (linear, cubic, etc.).
+Section 2: Extrapolation & Input
+Widget: st.checkbox ("Allow Extrapolation?"): Determines if predictions outside the original X range are permitted.
+Widget: st.number_input ("Enter the X value to evaluate:"): Input the specific X point for which you want the corresponding Y estimate.
+Predict Button & Result
+Widget: st.button("Predict Y Value")
+Action:
+Uses the selected settings and the helper function (setup_1d_interpolator) to prepare the data and create the SciPy interp1d function.
+Checks if the input X value is within the original data's bounds if extrapolation is not allowed. Displays an error if it's out of bounds.
+Calls the created interpolator function with the single input X value.
+Displays the calculated Y value using st.metric for clear presentation.
+Error Handling: Catches errors during interpolator setup or prediction.
+10. Page: 7 - Save Data
+Purpose
+This page allows you to download the current state of the main DataFrame (as stored in st.session_state.df) to your local computer. This is useful after you have performed cleaning, transformation, or other modifications.
+
+Check for Loaded Data
+Ensures data is loaded before proceeding.
+Data Status Display
+Confirms the dimensions (rows, columns) of the data about to be saved.
+Displays a warning if the df_modified flag is True, reminding the user that the data differs from the originally loaded file.
+Output Format and Options
+Format Selection (CSV/Excel)
+Widget: st.radio to choose the desired output file format: CSV or Excel (.xlsx).
+Output Filename
+Widget: st.text_input pre-filled with a suggested filename (e.g., original_name_processed.csv). You can change this name.
+Format-Specific Options
+If CSV:
+Delimiter: st.text_input to specify the separator (default ,). Use \t for tab.
+Include DataFrame index?: st.checkbox (default False) to decide whether to write the Pandas DataFrame index as the first column in the CSV.
+If Excel (.xlsx):
+Sheet name: st.text_input (default "Processed Data") to name the sheet within the Excel workbook.
+Include DataFrame index?: st.checkbox (default False) to decide whether to write the index to the Excel file.
+Note: Requires openpyxl library.
+Download Button
+Widget: st.download_button
+Action: When clicked:
+Converts the current DataFrame to the chosen format (CSV string or Excel bytes) in memory (using .to_csv() or .to_excel()). Caching (@st.cache_data) is used to speed this up if the data hasn't changed.
+Initiates the file download in your browser with the specified filename and format.
+Data Preview (Save Page)
+Widget: st.dataframe
+Purpose: Shows the first 5 rows of the data that will be saved when the download button is clicked, allowing a final visual check.

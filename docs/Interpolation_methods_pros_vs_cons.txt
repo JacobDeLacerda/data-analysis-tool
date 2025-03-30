@@ -1,0 +1,94 @@
+That's an excellent question! While `cubic` spline interpolation is often a fantastic default choice for smooth, non-linear data (especially in 1D), there are definitely situations where other non-linear methods available in the tool might be preferable or necessary.
+
+Here's a breakdown of the non-linear methods offered (beyond simple `linear`) and the pros and cons of each, explaining why you might choose one over another:
+
+**Baseline: `cubic` (Cubic Spline Interpolation - 1D)**
+
+*   **How it Works:** Fits piecewise 3rd-degree polynomials between points, ensuring the curve, its slope (1st derivative), and its curvature (2nd derivative) are continuous everywhere.
+*   **Pros:**
+    *   **Very Smooth:** Produces visually smooth and mathematically well-behaved curves (C² continuity).
+    *   **Generally Accurate:** Often provides a good balance between fitting the data points and representing a smooth underlying function.
+    *   **Widely Used Standard:** A common and reliable choice for many applications.
+*   **Cons:**
+    *   **Requires 4 Points:** Needs at least four data points to be defined globally.
+    *   **Can Overshoot:** Although much better than high-degree single polynomials, it can sometimes slightly overshoot or oscillate near sharp changes or noisy data if forced to maintain C² continuity.
+    *   **Assumes Smoothness:** Implicitly assumes the underlying process is smooth (has continuous second derivatives).
+
+**Why Use Other Non-Linear Methods?**
+
+**1. `quadratic` (Quadratic Spline Interpolation - 1D)**
+
+*   **How it Works:** Fits piecewise 2nd-degree polynomials, ensuring the curve and its slope (1st derivative) are continuous (C¹ continuity). Curvature can change abruptly at knots.
+*   **Pros:**
+    *   **Fewer Points Needed:** Only requires 3 data points, making it usable for smaller datasets where cubic isn't possible.
+    *   **Computationally Faster:** Less complex calculations than cubic splines.
+    *   **Potentially Less Overshoot:** In some *specific* cases with sharp bends, the lower degree might lead to less pronounced overshoot compared to cubic (though this isn't guaranteed).
+*   **Cons:**
+    *   **Less Smooth:** The discontinuity in the second derivative (curvature) can be noticeable visually or problematic if curvature is important. It's not as "graceful" as a cubic spline.
+    *   **Less Common:** Not as standard or widely used as linear or cubic.
+
+*   **When to Choose over `cubic` (1D):**
+    *   You only have 3 data points.
+    *   Computational performance is critical, and the slight reduction in smoothness is acceptable.
+    *   You suspect cubic might be overshooting slightly and want to try a lower-order smooth fit (though PCHIP, if available, might be better for monotonicity).
+
+**2. `cubic` (Triangulation-Based - Scattered Data)**
+
+*   **How it Works:** *This is fundamentally different from 1D cubic splines.* It operates on N-D scattered data. First, it creates a Delaunay triangulation connecting the points. Then, within each triangle (or N-D simplex), it fits a cubic polynomial patch that ensures C¹ continuity (smooth slopes) across the edges where triangles meet.
+*   **Pros:**
+    *   **Smooth Surface for Scattered Data:** Provides a C¹ smooth surface (continuous slopes), which is often much better visually and physically than the C⁰ surface from linear triangulation.
+    *   **Adapts to Irregular Data:** Works directly with points that aren't on a grid.
+*   **Cons:**
+    *   **Computationally Expensive:** Significantly more complex and slower than linear triangulation or 1D cubic splines.
+    *   **Relies on Good Triangulation:** Sensitive to the quality of the input points (degenerate points like collinear points can cause issues).
+    *   **Boundary Effects:** Defined only within the convex hull of the data points.
+    *   **Implementation Complexity:** More sophisticated internal algorithms (e.g., Clough-Tocher).
+
+*   **When to Choose over `linear` (Scattered) or instead of other N-D methods:**
+    *   You have *scattered* data (not on a grid).
+    *   You need a surface that is demonstrably smooth (C¹ continuous slopes), not just continuous like linear triangulation provides.
+    *   You have enough computational resources.
+    *   RBF seems overly complex or its parameters are hard to tune for your case.
+
+**3. `rbf` (Radial Basis Functions - Scattered Data)**
+
+*   **How it Works:** Models the interpolated surface as a sum of radially symmetric functions (kernels) centered at each data point. Doesn't rely on triangulation. Weights are calculated to make the surface pass through (or near, if smoothing) the known points.
+*   **Pros:**
+    *   **Excellent for Scattered Data (especially >2D):** Often considered a state-of-the-art method for scattered data.
+    *   **Very Smooth Results:** Depending on the kernel (e.g., `gaussian`, `multiquadric`, `thin_plate`), can produce C² or even infinitely smooth (C∞) surfaces.
+    *   **No Triangulation Needed:** Avoids potential issues with degenerate triangulations.
+    *   **Handles Noise:** The `smooth` parameter allows it to approximate noisy data rather than fitting every fluctuation exactly (unlike splines with smooth=0).
+    *   **Flexible Kernels:** Different kernels (`gaussian`, `multiquadric`, `linear`, `cubic`, etc.) offer different characteristics (local vs. global influence, different smoothness).
+*   **Cons:**
+    *   **Computationally Expensive (Setup):** Solving for the weights involves a dense linear system, typically scaling as O(N³) where N is the number of data points. This can be very slow for large N. Evaluation is faster (O(N) per point).
+    *   **Parameter Sensitivity:** Can be sensitive to the choice of kernel and parameters like `epsilon` (shape parameter for some kernels). Finding optimal values might require experimentation.
+    *   **Potential Artifacts:** Can sometimes produce unexpected ripples or behavior far from the data points, especially with global kernels or poor parameter choices.
+    *   **Extrapolation Instability:** Extrapolating far beyond the data domain can be highly unreliable.
+
+*   **When to Choose over `cubic` (Scattered or 1D):**
+    *   You have *scattered* data, especially in 3 or more dimensions where triangulation becomes complex.
+    *   You need a very high degree of smoothness (C² or higher).
+    *   Your data might be noisy, and you want to use the `smooth` parameter for approximation rather than exact interpolation.
+    *   You encounter issues with triangulation methods (e.g., degenerate points).
+    *   You are willing to accept the higher computational cost for potentially better quality, especially for sparse or high-dimensional scattered data.
+
+**Summary Table:**
+
+| Feature          | `cubic` (1D Spline) | `quadratic` (1D Spline) | `cubic` (Scattered Triang.) | `rbf` (Scattered)       |
+| :--------------- | :------------------ | :---------------------- | :-------------------------- | :---------------------- |
+| **Data Type**    | 1D                  | 1D                      | N-D Scattered             | N-D Scattered         |
+| **Smoothness**   | C² (Very Smooth)    | C¹ (Smooth Slope)       | C¹ (Smooth Slope)         | C² to C∞ (Very Smooth) |
+| **Min Points**   | 4                   | 3                       | N+1 (for non-degeneracy)  | 1                       |
+| **Speed (Setup)**| Fast                | Very Fast               | Moderate/Slow             | Slow (O(N³))          |
+| **Speed (Eval)** | Very Fast           | Very Fast               | Moderate                  | Moderate (O(N))         |
+| **Noise Handling** | Fits noise          | Fits noise              | Fits noise                | Good (via `smooth`)     |
+| **Extrapolation**| Okay (Careful)      | Okay (Careful)          | Poor (Fill value)         | Unstable (Careful)    |
+| **Key Advantage**| Good default smooth | Fewer points needed     | Smooth for scattered      | High quality smooth/ND  |
+| **Key Drawback** | Can overshoot       | Less smooth             | Costly, needs triangulation | Costly setup, params    |
+
+**Conclusion:**
+
+While 1D `cubic` splines are excellent general-purpose smooth interpolators, you might choose:
+*   `quadratic` (1D) if you have very few points (3).
+*   `cubic` (Scattered) if you need C¹ smoothness for scattered data and RBF seems too complex or costly for evaluation.
+*   `rbf` (Scattered) if you have scattered data (especially N-D), need high smoothness, want to handle noise via smoothing, or triangulation methods fail, and you can afford the setup computation cost.

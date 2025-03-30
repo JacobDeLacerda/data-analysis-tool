@@ -1,0 +1,73 @@
+# Feature Documentation: Generate Interpolated Points (for Download)
+
+## 1. What is this Feature?
+
+This is the primary workflow on the "Interpolate Data" page. Its main purpose is to **calculate estimated values (using a chosen interpolation method) at a *new set of points* that you define**, and then provide these results as a downloadable file (typically CSV).
+
+Instead of just predicting a single value, this feature allows you to create a whole new dataset based on the patterns learned from your original loaded data.
+
+## 2. Why is it Useful? (Use Cases)
+
+This feature is incredibly useful across many fields for several reasons:
+
+*   **Increasing Data Resolution (Upsampling):**
+    *   Imagine you have hourly temperature readings, but you need estimated readings every 10 minutes for a simulation. You can use this feature to generate points at those 10-minute intervals and get the interpolated temperatures.
+    *   Similarly, if you have elevation measurements at sparse locations, you can generate points on a dense grid to create a detailed Digital Elevation Model (DEM).
+
+*   **Filling Gaps (within the data range):**
+    *   If your original data has missing time points or spatial locations *within* the range covered by your existing points, you can generate points specifically at those missing locations to get interpolated estimates. (Though the "Clean Data" page offers simpler filling methods for existing NaNs).
+
+*   **Creating Smooth Curves/Surfaces for Visualization:**
+    *   Your original data might be sparse. Generating many interpolated points between them allows you to plot a smooth curve (1D) or surface (2D/3D) that represents the underlying trend more clearly than just connecting the original points.
+
+*   **Standardizing Data Grids:**
+    *   You might have data from different sources measured on slightly different grids or at different time steps. You can define a common target grid and use interpolation to estimate the values of *all* datasets onto that standard grid, making comparisons easier.
+
+*   **Data Augmentation (with caution):**
+    *   In some machine learning contexts (especially time series or spatial data), generating interpolated points can be a way to increase the size of a dataset, although this should be done carefully as it doesn't add truly *new* information.
+
+*   **Input for Further Analysis/Modeling:**
+    *   The generated dataset of interpolated points can serve as input for other simulations, models, or analyses that require data at specific locations or resolutions not present in the original measurements.
+
+## 3. How Do I Use It?
+
+Here's a step-by-step guide within the CDAT Streamlit interface:
+
+1.  **Navigate:** Go to the **"6 - Interpolate Data"** page from the sidebar.
+2.  **Select Goal:** Ensure the radio button **"Generate Interpolated Points (for Download)"** is selected.
+
+3.  **Step 1: Select Mode & Input Data:**
+    *   **Choose Mode:** Select `1D`, `N-D Scattered`, or `N-D Regular Grid` based on how the data you want to interpolate is structured in your main loaded dataset.
+    *   **Select Input Columns:** Based on the mode, use the dropdowns/multiselect boxes to choose the column(s) from your *currently loaded data* that represent the known coordinates (X, or multiple coordinates) and the known values (Y, or the value to interpolate).
+
+4.  **Step 2: Choose Method & Parameters:**
+    *   **Select Method:** Choose the desired interpolation algorithm (e.g., `linear`, `cubic`, `rbf`) from the options available for your chosen mode. Refer to the detailed documentation for what each method does.
+    *   **(Optional) RBF Parameters:** If you chose `scattered` mode and `rbf` method, you can expand the "RBF Parameters" section to fine-tune the kernel, epsilon, or smooth factor. Defaults often work well.
+    *   **(Optional) Extrapolation & Fill:** Expand the "Extrapolation & Fill Options" section.
+        *   Check **"Allow Extrapolation"** if you need estimates outside the range of your original input coordinates. Use with caution, as results can be unreliable far from the data.
+        *   Select a **"Fill value..."** (`nan`, `edge`, `number`) to specify what value should be assigned to points where interpolation cannot be performed (e.g., outside the data range if extrapolation is off, or outside the convex hull for scattered methods).
+
+5.  **Step 3: Define Points for Interpolation Output:** This is crucial – you need to tell the tool *where* you want the new interpolated values calculated.
+    *   **Choose Source:** Select how you will define these new points using the "How to specify output points?" dropdown.
+        *   **`Upload a file with points`:**
+            *   Use the file uploader to select a CSV/Excel/Txt file containing the exact coordinates where you want predictions.
+            *   Specify the delimiter and header row (if any) for *this new points file*.
+            *   Use the column selection dropdown(s) to tell the tool which column(s) *in this uploaded file* contain the required X value(s) or coordinates (matching the number and expected order from Step 1). A preview helps verify.
+        *   **`Generate evenly spaced points (1D)`:** (1D Mode only)
+            *   Enter the desired *total number* of points. The tool will create this many points, evenly spaced between the minimum and maximum X values found in your original input data.
+        *   **`Generate points with specific step (1D)`:** (1D Mode only)
+            *   Enter the desired *step size*. The tool will create points starting from the minimum input X, incrementing by the step size, up to the maximum input X.
+        *   **`Generate points on a new grid`:** (Available in all modes)
+            *   Define the boundaries and resolution for a new *regular grid*. For each dimension required (1 based on your input columns in Step 1), specify the Minimum value, Maximum value, and the Number of points you want along that dimension. The tool will generate all combinations of these points, forming a complete grid.
+
+6.  **Step 4: Execute & Download:**
+    *   **Click Button:** Once all selections are made, click the **"Run Interpolation & Prepare Download"** button.
+    *   **Processing:** The tool will show a spinner while it:
+        *   Prepares the input data.
+        *   Generates or reads the target points based on your choice in Step 3.
+        *   Performs the interpolation calculation using the chosen method.
+        *   Handles errors and applies fill values as needed.
+    *   **Results Preview:** If successful, a preview table (first few rows) of the results will appear. This table will contain columns for the coordinates of the points you specified in Step 3, plus a final column containing the calculated interpolated values. Column names will typically end with `_interp`.
+    *   **Download:** A **"Download Interpolation Results as CSV"** button will appear. Click this to save the complete results table to your computer as a CSV file.
+
+**In summary:** This feature lets you "query" the model of your data (created by the interpolation method) at many new locations simultaneously, creating a new, often denser or more regularly spaced, dataset based on the trends present in your original measurements.
