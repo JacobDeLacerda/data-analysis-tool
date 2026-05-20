@@ -1,90 +1,71 @@
-# pages/7_Save_Data.py
 import streamlit as st
 import pandas as pd
-import io # For BytesIO
-import os # For path manipulation
+import io
+import os
+from utils import require_data, sidebar_status
 
 st.set_page_config(layout="wide")
+sidebar_status()
+require_data()
 
-st.header("7. Save Current Data")
-st.caption("Download the currently processed data (in its current state) to a file.")
+st.header("7. Save Data")
 
-# --- Check if data is loaded ---
-if 'df' not in st.session_state or st.session_state.df is None:
-    st.warning("No data loaded to save. Please load and process data first.")
-    st.stop()
-
-df_to_save = st.session_state.df
-
-st.info(f"Data to be saved has {df_to_save.shape[0]} rows and {df_to_save.shape[1]} columns.")
-if st.session_state.get('df_modified', False):
-    st.warning("Note: This data has been modified from the originally loaded file.")
+df = st.session_state.df
+st.info(f"{df.shape[0]:,} rows × {df.shape[1]} columns")
+if st.session_state.get('df_modified'):
+    st.warning("This data has been modified from the original.")
 
 st.divider()
-st.subheader("Choose Output Format and Options")
 
-# --- Determine Default Filename ---
-default_filename = "processed_data.csv"
-original_filename = st.session_state.get('original_filename', None)
-if original_filename:
-    base, ext = os.path.splitext(original_filename)
-    processed_ext = ext.lower() if ext.lower() in ['.csv', '.xlsx', '.xls'] else '.csv'
-    default_filename = f"{base}_processed{processed_ext}"
+original = st.session_state.get('original_filename', '')
+base = os.path.splitext(original)[0] if original else 'processed_data'
+default_name = f"{base}_processed.csv"
 
+fmt = st.radio("Format:", ["CSV", "Excel (.xlsx)"], horizontal=True)
+filename = st.text_input("Filename:", value=default_name)
 
-# --- Format Selection ---
-file_format = st.radio("Select output format:", ["CSV", "Excel (.xlsx)"], index=0, horizontal=True)
-output_filename = st.text_input("Enter output filename:", value=default_filename)
+if fmt == "CSV":
+    c1, c2 = st.columns(2)
+    delimiter = c1.text_input("Delimiter:", value=',', help="Use \\t for tab")
+    if delimiter == '\\t':
+        delimiter = '\t'
+    include_index = c2.checkbox("Include row index?", value=False)
 
-# --- Format Specific Options ---
-file_data = None
-mime_type = None
+    @st.cache_data
+    def to_csv(df, sep, idx):
+        return df.to_csv(sep=sep, index=idx).encode('utf-8')
 
-if file_format == "CSV":
-    delimiter = st.text_input("Delimiter:", value=',', help="Common delimiters: ',' (comma), '\\t' (tab), ';' (semicolon).")
-    if delimiter == '\\t': delimiter = '\t'
-    include_index_csv = st.checkbox("Include DataFrame index?", value=False)
-    mime_type = 'text/csv'
+    data = to_csv(df, delimiter, include_index)
+    mime = 'text/csv'
 
-    @st.cache_data # Cache the conversion
-    def convert_df_to_csv(df, sep, index):
-        return df.to_csv(sep=sep, index=index).encode('utf-8')
+else:
+    c1, c2 = st.columns(2)
+    sheet = c1.text_input("Sheet name:", value="Sheet1")
+    include_index = c2.checkbox("Include row index?", value=False)
+    if not filename.lower().endswith('.xlsx'):
+        filename += '.xlsx'
 
-    if output_filename:
-         file_data = convert_df_to_csv(df_to_save, delimiter, include_index_csv)
+    @st.cache_data
+    def to_excel(df, sheet, idx):
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as w:
+            df.to_excel(w, sheet_name=sheet, index=idx)
+        return buf.getvalue()
 
-elif file_format == "Excel (.xlsx)":
-    sheet_name = st.text_input("Sheet name:", value="Processed Data")
-    include_index_excel = st.checkbox("Include DataFrame index?", value=False)
-    mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    data = to_excel(df, sheet, include_index)
+    mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
-    @st.cache_data # Cache the conversion
-    def convert_df_to_excel(df, sheet, index):
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name=sheet, index=index)
-        processed_data = output.getvalue()
-        return processed_data
-
-    if output_filename:
-        # Ensure filename has .xlsx extension
-        if not output_filename.lower().endswith('.xlsx'):
-            output_filename += '.xlsx'
-        file_data = convert_df_to_excel(df_to_save, sheet_name, include_index_excel)
-
-# --- Download Button ---
-if output_filename and file_data:
+if filename:
     st.download_button(
-        label=f"Download as {file_format}",
-        data=file_data,
-        file_name=output_filename,
-        mime=mime_type,
-        type="primary"
+        f"Download as {fmt}",
+        data=data,
+        file_name=filename,
+        mime=mime,
+        type="primary",
     )
-elif not output_filename:
-    st.warning("Please enter an output filename.")
-
+else:
+    st.warning("Enter a filename.")
 
 st.divider()
-st.subheader("Current Data Preview (First 5 Rows)")
-st.dataframe(st.session_state.df.head(), use_container_width=True)
+st.subheader("Preview (first 5 rows)")
+st.dataframe(df.head(), use_container_width=True)

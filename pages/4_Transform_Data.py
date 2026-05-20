@@ -1,266 +1,178 @@
-# pages/4_Transform_Data.py
 import streamlit as st
 import pandas as pd
+import numpy as np
+from utils import require_data, sidebar_status
 
 st.set_page_config(layout="wide")
+sidebar_status()
+require_data()
 
 st.header("4. Transform Data")
-st.caption("Filter rows, select/drop/rename columns, sort, calculate, change types.")
 
-# --- Check if data is loaded ---
-if 'df' not in st.session_state or st.session_state.df is None:
-    st.warning("No data loaded. Please go to the 'Load Data' page first.")
-    st.stop()
+df = st.session_state.df
 
-df = st.session_state.df # Get the DataFrame
-
-# --- Transformation Options ---
-st.subheader("Select Transformation Action")
-
-transform_action = st.selectbox(
-    "Choose Action:",
+action = st.selectbox(
+    "Action:",
     [
-        "Filter Rows (by condition/query)",
-        "Select Columns (Keep)",
+        "Filter Rows",
+        "Keep Columns",
         "Drop Columns",
         "Rename Column",
-        "Add Column (Basic Calculation)",
+        "Create Column",
         "Sort Data",
-        "Change Column Type"
+        "Cast Column Type",
     ],
-    index=None, # Require selection
-    placeholder="Select transformation..."
+    index=None,
+    placeholder="Select a transformation…",
 )
 
 st.divider()
 
-# --- Action Specific Controls ---
-
-if transform_action == "Filter Rows (by condition/query)":
-    st.markdown("**Filter Rows using Pandas Query**")
+if action == "Filter Rows":
     st.markdown("""
-    Enter a condition using column names, operators (`==`, `!=`, `>`, `<`, `>=`, `<=`), and logicals (`&`, `|`, `~`).
-    - String values need quotes: `Country == 'Canada'`
-    - Column names with spaces need backticks: `` `Column Name` > 10 ``
-    - Check for nulls: `Value.isnull()` or `Value.notnull()`
-    - Check if in list: `Category.isin(['A', 'B'])`
+    Filter using Pandas query syntax. Examples:
+    - `Age > 30 & Status == 'Active'`
+    - `` `Column Name` < 100 ``
+    - `Value.isnull()` or `Score.isin([1, 2, 3])`
     """)
-    st.code("Example: (`Temperature` > 25.0) & (`Status` == 'Active') | `Value`.isnull()")
-
-    # Display available columns for reference
     st.caption(f"Available columns: {', '.join(df.columns)}")
-
-    query_string = st.text_area("Enter Query Condition:", height=100)
-
-    if st.button("Apply Filter", type="primary", disabled=not query_string):
+    query = st.text_area("Condition:", height=80)
+    if st.button("Apply Filter", type="primary", disabled=not query):
         try:
-            df_filtered = df.query(query_string, engine='python') # Python engine often more flexible
-            rows_before = len(df)
-            rows_after = len(df_filtered)
-            st.session_state.df = df_filtered
+            filtered = df.query(query, engine='python')
+            st.session_state.df = filtered
             st.session_state.df_modified = True
-            st.success(f"Applied Filter: Kept {rows_after} out of {rows_before} rows.")
-            if rows_after == 0:
-                st.warning("Filter resulted in an empty dataset!")
+            st.success(f"Kept {len(filtered):,} of {len(df):,} rows.")
+            if len(filtered) == 0:
+                st.warning("Filter produced an empty dataset.")
             st.rerun()
         except Exception as e:
-            st.error(f"Error applying query '{query_string}': {e}")
-            st.error("Check syntax, column names (use backticks `` if needed), quotes, and data types.")
+            st.error(f"Query error: {e}")
 
-elif transform_action == "Select Columns (Keep)":
-    st.markdown("**Select Columns to Keep**")
-    cols_to_keep = st.multiselect(
-        "Choose columns to keep (others will be dropped):",
-        df.columns.tolist(),
-        help="Select one or more columns."
-    )
-    if st.button("Apply Column Selection", type="primary", disabled=not cols_to_keep):
-        try:
-            df_transformed = df[cols_to_keep]
-            st.session_state.df = df_transformed
-            st.session_state.df_modified = True
-            st.success(f"Applied: Kept {len(cols_to_keep)} columns.")
-            st.rerun()
-        except KeyError as e:
-            st.error(f"Error: Column '{e}' not found. This shouldn't happen with multiselect.")
-        except Exception as e:
-            st.error(f"Error selecting columns: {e}")
+elif action == "Keep Columns":
+    cols = st.multiselect("Columns to keep (all others will be dropped):", df.columns.tolist())
+    if st.button("Apply", type="primary", disabled=not cols):
+        st.session_state.df = df[cols]
+        st.session_state.df_modified = True
+        st.success(f"Kept {len(cols)} column(s).")
+        st.rerun()
 
-elif transform_action == "Drop Columns":
-    st.markdown("**Drop Columns**")
-    cols_to_drop = st.multiselect(
-        "Choose columns to drop:",
-        df.columns.tolist(),
-        help="Select one or more columns to remove."
-    )
-    if st.button("Apply Drop Columns", type="primary", disabled=not cols_to_drop):
-         try:
-            df_transformed = df.drop(columns=cols_to_drop)
-            st.session_state.df = df_transformed
-            st.session_state.df_modified = True
-            st.success(f"Applied: Dropped {len(cols_to_drop)} columns: {', '.join(cols_to_drop)}.")
-            st.rerun()
-         except KeyError as e:
-             st.error(f"Error: Column '{e}' not found during drop operation.")
-         except Exception as e:
-            st.error(f"Error dropping columns: {e}")
+elif action == "Drop Columns":
+    cols = st.multiselect("Columns to drop:", df.columns.tolist())
+    if st.button("Apply", type="primary", disabled=not cols):
+        st.session_state.df = df.drop(columns=cols)
+        st.session_state.df_modified = True
+        st.success(f"Dropped: {', '.join(cols)}.")
+        st.rerun()
 
-elif transform_action == "Rename Column":
-    st.markdown("**Rename Column**")
-    col_old = st.selectbox(
-        "Select column to rename:",
-        [""] + df.columns.tolist(), # Add empty option
-        index=0,
-        help="Choose the column you want to give a new name."
-    )
+elif action == "Rename Column":
+    col_old = st.selectbox("Column to rename:", [""] + df.columns.tolist(), index=0)
     if col_old:
-        col_new = st.text_input(
-            f"Enter new name for '{col_old}':",
-            help="Provide the desired new column name."
-        )
+        col_new = st.text_input(f"New name for '{col_old}':")
         if st.button("Apply Rename", type="primary", disabled=not col_new or col_new == col_old):
             if col_new in df.columns:
-                st.error(f"Error: Column name '{col_new}' already exists.")
+                st.error(f"Column '{col_new}' already exists.")
             else:
-                try:
-                    df_transformed = df.rename(columns={col_old: col_new})
-                    st.session_state.df = df_transformed
-                    st.session_state.df_modified = True
-                    st.success(f"Applied: Renamed '{col_old}' to '{col_new}'.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error renaming column: {e}")
+                st.session_state.df = df.rename(columns={col_old: col_new})
+                st.session_state.df_modified = True
+                st.success(f"Renamed '{col_old}' → '{col_new}'.")
+                st.rerun()
 
-elif transform_action == "Add Column (Basic Calculation)":
-    st.markdown("**Add Column (Basic Calculation)**")
-    numeric_cols = df.select_dtypes(include=pd.np.number).columns.tolist()
+elif action == "Create Column":
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
     if len(numeric_cols) < 2:
-        st.warning("Need at least two numeric columns to perform basic calculations.")
+        st.warning("Need at least two numeric columns.")
     else:
-        new_col_name = st.text_input("Enter name for the new column:", help="Choose a unique name for the result column.")
-        op_choice = st.selectbox("Select operation:", ["Add (+)", "Subtract (-)", "Multiply (*)", "Divide (/)"])
-        col1 = st.selectbox("Select FIRST numeric column:", numeric_cols, index=0)
-        col2 = st.selectbox("Select SECOND numeric column:", numeric_cols, index=1)
+        new_name = st.text_input("New column name:")
+        op = st.selectbox("Operation:", ["Add (+)", "Subtract (-)", "Multiply (*)", "Divide (/)"])
+        c1 = st.selectbox("First column:", numeric_cols, index=0)
+        c2 = st.selectbox("Second column:", numeric_cols, index=min(1, len(numeric_cols) - 1))
 
         overwrite = False
-        if new_col_name in df.columns:
-             overwrite = st.checkbox(f"Column '{new_col_name}' exists. Overwrite?", value=False)
+        if new_name and new_name in df.columns:
+            overwrite = st.checkbox(f"'{new_name}' already exists — overwrite?")
 
-        if st.button("Apply Calculation", type="primary", disabled=not new_col_name or (new_col_name in df.columns and not overwrite)):
+        disabled = not new_name or (new_name in df.columns and not overwrite)
+        if st.button("Create Column", type="primary", disabled=disabled):
             try:
-                 num_col1 = pd.to_numeric(df[col1], errors='coerce')
-                 num_col2 = pd.to_numeric(df[col2], errors='coerce')
-                 result = None
-                 op_symbol = op_choice.split()[1][1] # Get '+', '-', '*', '/'
-
-                 if op_choice == "Add (+)": result = num_col1 + num_col2
-                 elif op_choice == "Subtract (-)": result = num_col1 - num_col2
-                 elif op_choice == "Multiply (*)": result = num_col1 * num_col2
-                 elif op_choice == "Divide (/)":
-                      with np.errstate(divide='ignore', invalid='ignore'): result = num_col1 / num_col2
-                      result.replace([np.inf, -np.inf], np.nan, inplace=True)
-
-                 df_transformed = df.copy()
-                 df_transformed[new_col_name] = result
-                 st.session_state.df = df_transformed
-                 st.session_state.df_modified = True
-                 st.success(f"Applied: {'Updated' if overwrite else 'Added'} column '{new_col_name}' ({col1} {op_symbol} {col2}).")
-                 if result.isna().sum() > num_col1.isna().sum() + num_col2.isna().sum():
-                      st.warning("NaNs were introduced, possibly due to non-numeric inputs or division by zero.")
-                 st.rerun()
-
-            except KeyError:
-                 st.error("Selected column(s) not found.")
+                a = pd.to_numeric(df[c1], errors='coerce')
+                b = pd.to_numeric(df[c2], errors='coerce')
+                results = {
+                    "Add (+)": a + b,
+                    "Subtract (-)": a - b,
+                    "Multiply (*)": a * b,
+                    "Divide (/)": a / b.replace(0, np.nan),
+                }
+                result = results[op]
+                transformed = df.copy()
+                transformed[new_name] = result
+                st.session_state.df = transformed
+                st.session_state.df_modified = True
+                label = "Updated" if overwrite else "Added"
+                st.success(f"{label} column '{new_name}'.")
+                if result.isna().sum() > a.isna().sum() + b.isna().sum():
+                    st.warning("Some NaNs introduced (non-numeric input or division by zero).")
+                st.rerun()
             except Exception as e:
-                 st.error(f"Error performing calculation: {e}")
+                st.error(f"Error: {e}")
 
-elif transform_action == "Sort Data":
-    st.markdown("**Sort Data**")
-    sort_cols = st.multiselect(
-        "Select column(s) to sort by (order matters):",
-        df.columns.tolist(),
-        help="Choose one or more columns. Sorting precedence is based on selection order."
-    )
+elif action == "Sort Data":
+    sort_cols = st.multiselect("Sort by (order matters):", df.columns.tolist())
     if sort_cols:
-        ascending_list = []
-        st.write("Select sort order for each column:")
+        ascending = []
         for col in sort_cols:
-             is_ascending = st.radio(f"Sort '{col}':", ["Ascending", "Descending"], index=0, horizontal=True, key=f"sort_{col}")
-             ascending_list.append(is_ascending == "Ascending")
-
-        na_pos = st.radio("Place missing values:", ["first", "last"], index=1, horizontal=True, help="Where should NaNs/NaTs appear?")
-
+            direction = st.radio(f"'{col}':", ["Ascending", "Descending"], horizontal=True, key=f"sort_{col}")
+            ascending.append(direction == "Ascending")
+        na_pos = st.radio("Place NaNs:", ["last", "first"], horizontal=True)
         if st.button("Apply Sort", type="primary"):
             try:
-                df_sorted = df.sort_values(by=sort_cols, ascending=ascending_list, na_position=na_pos)
-                st.session_state.df = df_sorted
-                st.session_state.df_modified = True # Sorting is arguably a modification
-                st.success(f"Applied: Data sorted by {', '.join(sort_cols)}.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error sorting data: {e}")
-
-elif transform_action == "Change Column Type":
-    st.markdown("**Change Column Type**")
-    col_to_change = st.selectbox(
-        "Select column to change type:",
-        [""] + df.columns.tolist(), index=0,
-        help="Choose the column whose data type you want to modify."
-    )
-    if col_to_change:
-        st.write(f"Current type of '{col_to_change}': **{df[col_to_change].dtype}**")
-        type_options = ["numeric (float/int)", "string (object)", "datetime", "boolean"]
-        new_type = st.selectbox(
-            "Select new data type:",
-            type_options,
-            help="Choose the target data type. Conversion errors will result in missing values (NaN/NaT/NA)."
-        )
-        if st.button("Apply Type Change", type="primary"):
-            try:
-                original_series = df[col_to_change]
-                converted_series = None
-                target_dtype_str = "Unknown"
-
-                if new_type == "numeric (float/int)":
-                    converted_series = pd.to_numeric(original_series, errors='coerce')
-                    if converted_series.notna().all() and (converted_series == converted_series.astype(int)).all():
-                         converted_series = converted_series.astype(int)
-                    target_dtype_str = str(converted_series.dtype)
-                elif new_type == "string (object)":
-                    converted_series = original_series.astype(str)
-                    target_dtype_str = "object/string"
-                elif new_type == "datetime":
-                    converted_series = pd.to_datetime(original_series, errors='coerce', infer_datetime_format=True)
-                    target_dtype_str = str(converted_series.dtype)
-                elif new_type == "boolean":
-                     bool_map_true = {'true', '1', 'yes', 't', 'y'}
-                     bool_map_false = {'false', '0', 'no', 'f', 'n'}
-                     def to_bool_safe(x):
-                         if pd.isna(x): return pd.NA
-                         s = str(x).lower().strip()
-                         if s in bool_map_true: return True
-                         if s in bool_map_false: return False
-                         return pd.NA
-                     converted_series = original_series.apply(to_bool_safe).astype('boolean')
-                     target_dtype_str = "boolean (nullable)"
-
-                df_transformed = df.copy()
-                df_transformed[col_to_change] = converted_series
-                st.session_state.df = df_transformed
+                st.session_state.df = df.sort_values(by=sort_cols, ascending=ascending, na_position=na_pos)
                 st.session_state.df_modified = True
-                st.success(f"Applied: Changed '{col_to_change}' type to {target_dtype_str}.")
-
-                original_na = original_series.isna().sum()
-                converted_na = converted_series.isna().sum()
-                if converted_na > original_na:
-                     st.warning(f"{converted_na - original_na} values could not be converted and became missing (NaN/NaT/NA).")
+                st.success(f"Sorted by {', '.join(sort_cols)}.")
                 st.rerun()
-
             except Exception as e:
-                 st.error(f"Error changing type of column '{col_to_change}' to {new_type}: {e}")
+                st.error(f"Sort error: {e}")
 
+elif action == "Cast Column Type":
+    col = st.selectbox("Column to cast:", [""] + df.columns.tolist(), index=0)
+    if col:
+        st.write(f"Current type: **{df[col].dtype}**")
+        new_type = st.selectbox("Target type:", ["numeric", "string", "datetime", "boolean"])
+        if st.button("Apply Cast", type="primary"):
+            try:
+                original = df[col]
+                if new_type == "numeric":
+                    converted = pd.to_numeric(original, errors='coerce')
+                    if converted.notna().all() and (converted % 1 == 0).all():
+                        converted = converted.astype(int)
+                elif new_type == "string":
+                    converted = original.astype(str)
+                elif new_type == "datetime":
+                    converted = pd.to_datetime(original, errors='coerce')
+                elif new_type == "boolean":
+                    true_vals = {'true', '1', 'yes', 't', 'y'}
+                    false_vals = {'false', '0', 'no', 'f', 'n'}
+
+                    def to_bool(x):
+                        if pd.isna(x):
+                            return pd.NA
+                        s = str(x).lower().strip()
+                        return True if s in true_vals else (False if s in false_vals else pd.NA)
+
+                    converted = original.apply(to_bool).astype('boolean')
+
+                result = df.copy()
+                result[col] = converted
+                st.session_state.df = result
+                st.session_state.df_modified = True
+                st.success(f"Cast '{col}' to {converted.dtype}.")
+                new_na = converted.isna().sum() - original.isna().sum()
+                if new_na > 0:
+                    st.warning(f"{new_na} value(s) could not be converted and became NaN/NA.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Cast error: {e}")
 
 st.divider()
-st.subheader("Current Data Preview (First 5 Rows)")
+st.caption(f"Shape: {st.session_state.df.shape}")
 st.dataframe(st.session_state.df.head(), use_container_width=True)
-st.caption(f"Shape after last action: {st.session_state.df.shape}")

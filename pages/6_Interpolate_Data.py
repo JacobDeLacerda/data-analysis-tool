@@ -1,437 +1,324 @@
-# pages/6_Interpolate_Data.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
-from scipy.interpolate import (
-    interp1d, RegularGridInterpolator, griddata, Rbf
-)
-from scipy.spatial import Delaunay
+from scipy.interpolate import interp1d, griddata, Rbf
+from utils import require_data, sidebar_status
 
 st.set_page_config(layout="wide")
+sidebar_status()
+require_data()
 
 st.header("6. Interpolate Data")
-st.caption("Estimate values between known data points.")
 
-# --- Check if data is loaded ---
-if 'df' not in st.session_state or st.session_state.df is None:
-    st.warning("No data loaded. Please go to the 'Load Data' page first.")
-    st.stop()
+df = st.session_state.df
 
-df = st.session_state.df # Get the DataFrame
 
-# --- Helper Function for 1D Interpolator Setup ---
-# Avoids repeating data prep logic
-@st.cache_data # Cache the interpolator creation if data & settings don't change
-def setup_1d_interpolator(_df_internal, x_col, y_col, method, extrapolate, fill_value_str):
-    """Prepares data and returns a SciPy interp1d object or raises error."""
+# ── Helper functions ──────────────────────────────────────────────────────────
+
+@st.cache_data
+def build_1d_interpolator(_df, x_col, y_col, method, extrapolate, fill_str):
+    """Prepare data and return a SciPy interp1d object plus (x_min, x_max)."""
+    x = pd.to_numeric(_df[x_col], errors='coerce').values
+    y = pd.to_numeric(_df[y_col], errors='coerce').values
+
+    valid = ~(np.isnan(x) | np.isnan(y))
+    x, y = x[valid], y[valid]
+
+    sort_idx = np.argsort(x)
+    x, y = x[sort_idx], y[sort_idx]
+    _, uniq = np.unique(x, return_index=True)
+    x, y = x[uniq], y[uniq]
+
+    if len(x) < 2:
+        raise ValueError("Not enough valid data points for interpolation.")
+
+    min_pts = {'cubic': 4, 'quadratic': 3}.get(method, 2)
+    if len(x) < min_pts:
+        raise ValueError(f"'{method}' requires at least {min_pts} unique points; found {len(x)}.")
+
+    if fill_str == 'nan':
+        fill_arg = np.nan
+    elif fill_str == 'edge':
+        fill_arg = (y[0], y[-1]) if extrapolate else np.nan
+    else:
+        fill_arg = float(fill_str)
+
+    f = interp1d(x, y, kind=method, bounds_error=not extrapolate,
+                 fill_value=fill_arg, assume_sorted=True)
+    return f, float(x.min()), float(x.max())
+
+
+def _nd_known_points(df, coord_cols, value_col):
+    pts = df[coord_cols].apply(pd.to_numeric, errors='coerce').values
+    vals = pd.to_numeric(df[value_col], errors='coerce').values
+    valid = ~(np.isnan(pts).any(axis=1) | np.isnan(vals))
+    return pts[valid], vals[valid]
+
+
+def _generate_1d_points(source, x_min, x_max, num_pts, step):
+    if source == 'num_points':
+        return np.linspace(x_min, x_max, int(num_pts))
+    return np.arange(x_min, x_max + step * 1e-9, step)
+
+
+def _generate_nd_grid(grid_spec):
+    """Parse 'min:max:n,...' and return (M, D) array of all grid points."""
+    grids = []
+    for spec in grid_spec.split(','):
+        g_min, g_max, g_n = spec.split(':')
+        grids.append(np.linspace(float(g_min), float(g_max), int(g_n)))
+    mesh = np.meshgrid(*grids, indexing='ij')
+    return np.column_stack([g.ravel() for g in mesh])
+
+
+def _parse_fill(fill_str):
+    if fill_str in ('nan', 'edge'):
+        return np.nan
     try:
-        x_known = pd.to_numeric(_df_internal[x_col], errors='coerce').values
-        y_known = pd.to_numeric(_df_internal[y_col], errors='coerce').values
-    except KeyError as e:
-        raise ValueError(f"Selected column '{e}' not found in the current DataFrame.")
-    except Exception as e:
-        raise ValueError(f"Could not process selected columns '{x_col}', '{y_col}': {e}")
-
-    nan_mask = np.isnan(x_known) | np.isnan(y_known)
-    num_nan = np.sum(nan_mask)
-    if num_nan > 0:
-        st.info(f"Ignoring {num_nan} rows with missing/non-numeric values in '{x_col}' or '{y_col}'.")
-        x_known = x_known[~nan_mask]
-        y_known = y_known[~nan_mask]
-
-    if len(x_known) < 2:
-        raise ValueError("Not enough valid (non-NaN) data points remaining for 1D interpolation.")
-
-    # Sort and handle duplicates
-    sort_idx = np.argsort(x_known)
-    x_known = x_known[sort_idx]
-    y_known = y_known[sort_idx]
-    unique_x, unique_idx = np.unique(x_known, return_index=True)
-    num_duplicates = len(x_known) - len(unique_x)
-    if num_duplicates > 0:
-        st.info(f"Note: Using first occurrence for {num_duplicates} duplicate X values.")
-        x_known = unique_x
-        y_known = y_known[unique_idx]
-
-    if len(x_known) < 2:
-        raise ValueError("Not enough unique, valid data points after handling duplicates.")
-
-    # Check method requirements
-    min_points_required = {'linear': 2, 'cubic': 4, 'quadratic': 3}.get(method, 2)
-    if len(x_known) < min_points_required:
-         raise ValueError(f"Method '{method}' requires at least {min_points_required} unique data points, found {len(x_known)}.")
-
-    # Determine fill value argument for interp1d
-    fill_value_arg = None
-    bounds_error = not extrapolate
-    if fill_value_str == 'nan':
-        fill_value_arg = np.nan
-    elif fill_value_str == 'edge':
-        # Only valid if extrapolating, otherwise interp1d uses NaN/error
-        fill_value_arg = (y_known[0], y_known[-1]) if extrapolate else np.nan
-    else: # Assume numeric string
-        try:
-            fill_value_arg = float(fill_value_str)
-        except ValueError:
-             raise ValueError(f"Invalid numeric fill value '{fill_value_str}'.")
-
-    try:
-        interpolator = interp1d(
-            x_known, y_known, kind=method, bounds_error=bounds_error,
-            fill_value=fill_value_arg, assume_sorted=True
-        )
-        # Also return bounds for checking later
-        return interpolator, x_known.min(), x_known.max()
-    except ValueError as e:
-        # Catch specific SciPy errors
-         raise ValueError(f"SciPy interp1d failed: {e}")
-    except Exception as e:
-         raise RuntimeError(f"Unexpected error creating 1D interpolator: {e}")
+        return float(fill_str)
+    except ValueError:
+        return np.nan
 
 
-# =============================================
-# === Main Interpolation Workflow Selection ===
-# =============================================
+# ── Workflow selection ────────────────────────────────────────────────────────
 
-interp_goal = st.radio(
-    "What do you want to do?",
-    ["**Generate Interpolated Points (for Download)**", "**Evaluate Single Point (1D Only)**"],
+goal = st.radio(
+    "Goal:",
+    ["Generate points (download CSV)", "Evaluate single point (1D)"],
     horizontal=True,
-    help="Choose whether to create a file with many interpolated points or predict Y for a single X (1D only)."
 )
-
 st.divider()
 
-# ===============================================
-# === Goal 1: Generate Download File Workflow ===
-# ===============================================
-if "**Generate Interpolated Points (for Download)**" in interp_goal:
-    st.subheader("1. Select Interpolation Mode & Input Data")
-    # Mode & Input Columns (Simplified layout)
-    mode_choice = st.radio(
-        "Interpolation Mode:",
-        ['1D (y = f(x))', 'N-D Scattered Data', 'N-D Regular Grid'],
-        key="mode_download"
+# ── Goal 1: Generate & download ───────────────────────────────────────────────
+if goal == "Generate points (download CSV)":
+
+    st.subheader("1. Input data")
+    mode_label = st.radio(
+        "Mode:", ["1D — y = f(x)", "N-D Scattered", "N-D Grid"], horizontal=True
     )
-    mode = '1d' if '1D' in mode_choice else ('scattered' if 'Scattered' in mode_choice else 'grid')
+    mode = '1d' if '1D' in mode_label else ('scattered' if 'Scattered' in mode_label else 'grid')
 
-    cols_available = df.columns.tolist()
-    if not cols_available:
-        st.error("No columns found in the loaded data!")
-        st.stop()
+    cols = df.columns.tolist()
+    x_col = y_col = coord_cols = value_col = None
+    coord_names = []
 
-    x_col, y_col, coord_cols, value_col = None, None, None, None
-    num_coords = 0
-    coord_names_list = []
-
-    input_container = st.container(border=True)
-    with input_container:
+    with st.container(border=True):
         if mode == '1d':
             c1, c2 = st.columns(2)
-            with c1:
-                 x_col = st.selectbox("Select X column (independent):", cols_available, index=None, placeholder="Select column...", key="xd_down")
-            with c2:
-                 y_col = st.selectbox("Select Y column (dependent):", cols_available, index=None, placeholder="Select column...", key="yd_down")
-            if x_col: coord_names_list = [x_col]
-            num_coords = 1
-        else: # grid or scattered
-             coord_cols = st.multiselect("Select Coordinate columns (order matters):", cols_available, help="Columns representing the location/coordinates.", key="coordd_down")
-             value_col = st.selectbox("Select Value column:", cols_available, index=None, placeholder="Select column...", help="Column with the values to be interpolated.", key="vald_down")
-             if coord_cols:
-                 num_coords = len(coord_cols)
-                 coord_names_list = coord_cols
-
-    input_valid = (mode == '1d' and x_col and y_col) or (mode != '1d' and coord_cols and value_col)
-
-    if not input_valid:
-        st.info("Please select the required input columns above.")
-        st.stop()
-
-    # --- Method & Parameters ---
-    st.subheader("2. Choose Interpolation Method & Parameters")
-    method_container = st.container(border=True)
-    with method_container:
-        method = None
-        rbf_params = {}
-
-        if mode == '1d':
-            method = st.selectbox("1D Method:", ['linear', 'cubic', 'quadratic', 'slinear', 'nearest', 'zero'], index=0, key="methd_1d")
-        elif mode == 'grid':
-            method = st.selectbox("Grid Method:", ['linear', 'nearest'], index=0, key="methd_grid")
-        elif mode == 'scattered':
-            method = st.selectbox("Scattered Method:", ['linear', 'cubic', 'nearest', 'rbf'], index=0, key="methd_scat")
-            if method == 'rbf':
-                with st.expander("RBF Parameters (Optional)"):
-                    rbf_params['kernel'] = st.selectbox("RBF Kernel:", ['multiquadric', 'inverse', 'gaussian', 'linear', 'cubic', 'quintic', 'thin_plate'], index=0, key="rbfk")
-                    rbf_params['epsilon'] = st.number_input("Epsilon (> 0):", min_value=1e-9, value=None, format="%f", help="Shape parameter. Default usually works well.", key="rbfe")
-                    rbf_params['smooth'] = st.number_input("Smooth factor (>= 0):", min_value=0.0, value=0.0, format="%f", help="0=exact interpolation.", key="rbfs")
-
-        # --- Extrapolation & Fill ---
-        with st.expander("Extrapolation & Fill Options"):
-             extrapolate = st.checkbox("Allow Extrapolation", value=False, help="Estimate outside original data range?", key="extrapd")
-             fill_options = ['nan']
-             if mode == '1d' and extrapolate: fill_options.append('edge')
-             fill_options.append('number')
-             fill_choice = st.selectbox("Fill value for outside domain:", fill_options, index=0, help="Used if extrapolation is off, or outside convex hull.", key="filld")
-             fill_value_str = fill_choice
-             if fill_choice == 'number':
-                 fill_value_num = st.number_input("Enter numeric fill value:", value=0.0, format="%f", key="filld_num")
-                 fill_value_str = str(fill_value_num)
-
-
-    # --- Output Points Specification ---
-    st.subheader("3. Define Points for Interpolation Output")
-    points_container = st.container(border=True)
-    with points_container:
-        new_points_source = None
-        points_new_df = None # To hold points read from file
-        num_points_1d = None
-        step_1d = None
-        grid_spec_nd = None
-        points_file_cols = None # To hold selected column names from uploaded file
-
-        output_point_options = ["Generate points on a new grid"]
-        if mode == '1d':
-            output_point_options.insert(0, "Generate evenly spaced points (1D)")
-            output_point_options.insert(1, "Generate points with specific step (1D)")
-        output_point_options.insert(0, "Upload a file with points")
-
-        source_choice = st.selectbox("How to specify output points?", output_point_options, index=0, key="point_source_down")
-
-        if "Upload a file" in source_choice:
-            new_points_source = 'file'
-            uploaded_points_file = st.file_uploader("Upload points file (CSV/Excel/Txt)", type=['csv', 'xlsx', 'xls', 'txt'], key="points_upload_down")
-            if uploaded_points_file:
-                points_delimiter = st.text_input("Delimiter (if CSV/Txt)", value=',', key="points_delim_down")
-                if points_delimiter == '\\t': points_delimiter = '\t'
-                points_header = st.number_input("Header row (0-based, None if none)", value=None, step=1, key="points_head_down", format="%d")
-                # Load preview
-                try:
-                    points_new_df = pd.read_csv(uploaded_points_file, delimiter=points_delimiter, header=points_header, skipinitialspace=True, nrows=100) # Read only head for preview/col selection
-                    st.write("Preview of uploaded points file:")
-                    st.dataframe(points_new_df.head(), height=150)
-                    cols_in_points_file = points_new_df.columns.tolist()
-                    # Get column selection
-                    if mode == '1d':
-                        points_file_cols = st.selectbox(f"Select column for X ({x_col}) from points file:", cols_in_points_file, key="points_cols_1d_down", index=None)
-                    else: # N-D
-                        st.caption(f"Coordinates required (in order): {', '.join(coord_names_list)}")
-                        default_indices = list(range(min(num_coords, len(cols_in_points_file))))
-                        points_file_cols_selected = st.multiselect(
-                            f"Select {num_coords} columns for coordinates from points file:",
-                            cols_in_points_file,
-                            default=[cols_in_points_file[i] for i in default_indices] if default_indices else None,
-                            key="points_cols_nd_down"
-                        )
-                        if len(points_file_cols_selected) == num_coords: points_file_cols = points_file_cols_selected
-                        else: st.warning(f"Please select exactly {num_coords} columns."); points_file_cols = None
-                    # Reset file pointer for full read later
-                    uploaded_points_file.seek(0)
-                except Exception as e:
-                    st.error(f"Error previewing points file: {e}"); points_new_df = None; points_file_cols = None
-
-        elif "evenly spaced points (1D)" in source_choice:
-            new_points_source = 'num_points'
-            num_points_1d = st.number_input("Number of points to generate:", min_value=2, value=100, step=10, help="Points generated between min/max of input X.", key="npd")
-        elif "specific step (1D)" in source_choice:
-            new_points_source = 'step'
-            step_1d = st.number_input("Step size between points:", min_value=1e-9, value=1.0, format="%f", help="Points generated between min/max of input X.", key="stepd")
-        elif "new grid" in source_choice:
-            new_points_source = 'grid_spec'
-            st.write(f"Define grid boundaries and points for {num_coords} dimension(s) ({', '.join(coord_names_list)}):")
-            grid_specs_list = []
-            valid_grid_spec = True
-            for i in range(num_coords):
-                 gc1, gc2, gc3 = st.columns(3)
-                 g_min = gc1.number_input(f"Min (Dim {i+1})", value=0.0, format="%f", key=f"gmind_{i}")
-                 g_max = gc2.number_input(f"Max (Dim {i+1})", value=1.0, format="%f", key=f"gmaxd_{i}")
-                 g_num = gc3.number_input(f"Num Points (Dim {i+1})", min_value=2, value=20, step=1, key=f"gnumd_{i}")
-                 if g_max <= g_min: gc2.warning("Max <= Min!"); valid_grid_spec = False
-                 grid_specs_list.append(f"{g_min}:{g_max}:{g_num}")
-            if valid_grid_spec: grid_spec_nd = ",".join(grid_specs_list)
-
-
-    # --- Execute Button & Logic ---
-    st.divider()
-    st.subheader("4. Execute Interpolation & Download Results")
-
-    # Check if prerequisites are met
-    run_disabled = not method or not new_points_source or \
-                   (new_points_source == 'file' and (uploaded_points_file is None or points_file_cols is None)) or \
-                   (new_points_source == 'grid_spec' and not grid_spec_nd)
-
-    if st.button("Run Interpolation & Prepare Download", type="primary", disabled=run_disabled):
-
-        settings = { # Collect all settings
-            'mode': mode, 'method': method,
-            'x_col': x_col, 'y_col': y_col, 'coord_cols': coord_cols, 'value_col': value_col,
-            'extrapolate': extrapolate, 'fill_value': fill_value_str,
-            'new_points_source': new_points_source,
-            'num_points': num_points_1d, 'step': step_1d, 'grid_spec': grid_spec_nd,
-            # RBF specific
-            'rbf_kernel': rbf_params.get('kernel'), 'rbf_epsilon': rbf_params.get('epsilon'), 'rbf_smooth': rbf_params.get('smooth'),
-            # Info needed by generator/saver functions
-            'coord_col_names': coord_names_list, 'value_col_name': y_col if mode == '1d' else value_col,
-            # File source specifics (passed separately or processed here)
-            'uploaded_points_file_obj': uploaded_points_file if new_points_source == 'file' else None,
-            'points_file_delimiter': points_delimiter if new_points_source == 'file' else None,
-            'points_file_header': points_header if new_points_source == 'file' else None,
-            'points_file_cols': points_file_cols if new_points_source == 'file' else None,
-        }
-
-        results_df = None
-        error_occurred = False
-        with st.spinner("Performing interpolation..."):
-            try:
-                # --- Get known points/values --- (Simplified - assumes previous selection)
-                # [Similar data prep as before: get points_known, values_known, x_known, y_known, handle NaNs, sort/unique for 1D]
-                # This part is crucial and should be robust
-                if mode == '1d':
-                    # Re-use setup function
-                    _, x_min_bound, x_max_bound = setup_1d_interpolator(df, x_col, y_col, method, extrapolate, fill_value_str)
-                    # Keep x_known, y_known from setup (already prepared)
-                    # Get prepared x_known, y_known if needed (e.g., for generator functions)
-                    # Simplified: Re-run prep inside generator if needed, or pass them
-                    x_known_for_gen = pd.to_numeric(df[x_col], errors='coerce').dropna().unique() # For bounds
-                else: # N-D
-                    points_known_df = df[coord_cols]
-                    values_known_series = df[value_col]
-                    points_known = pd.to_numeric(points_known_df.stack(), errors='coerce').unstack().values
-                    values_known = pd.to_numeric(values_known_series, errors='coerce').values
-                    nan_mask = np.isnan(points_known).any(axis=1) | np.isnan(values_known)
-                    num_nan = np.sum(nan_mask)
-                    if num_nan > 0: st.info(f"Ignoring {num_nan} rows with missing/non-numeric values in selected columns.")
-                    points_known = points_known[~nan_mask]
-                    values_known = values_known[~nan_mask]
-                    if len(points_known) == 0: raise ValueError("Not enough valid data points.")
-
-
-                # --- Generate or Get New Points Array ---
-                points_new_array = None
-                if new_points_source == 'file':
-                     # Read the full file now using settings
-                     try:
-                         points_new_df_full = pd.read_csv(
-                             settings['uploaded_points_file_obj'],
-                             delimiter=settings['points_file_delimiter'],
-                             header=settings['points_file_header'],
-                             skipinitialspace=True
-                         )
-                         # Select columns and convert
-                         selected_cols_df = points_new_df_full[settings['points_file_cols']] if isinstance(settings['points_file_cols'], list) else points_new_df_full[[settings['points_file_cols']]]
-                         points_new_array = selected_cols_df.values.astype(float)
-                     except Exception as e: raise ValueError(f"Failed to read/process points file fully: {e}")
-                elif mode == '1d':
-                    # Pass x_known bounds to generator
-                    settings_gen = settings.copy() # Avoid modifying original settings
-                    settings_gen['x_known_min'] = x_known_for_gen.min()
-                    settings_gen['x_known_max'] = x_known_for_gen.max()
-                    points_new_array = generate_points_1d_interp(settings_gen, x_known_for_gen) # Pass minimal needed info
-                else: # N-D Grid Spec
-                    points_new_array = generate_points_nd_interp(settings, num_coords, coord_names_list)
-
-
-                # --- Perform Actual Interpolation --- (Simplified logic - assumes previous implementation was correct)
-                # [Insert the core interpolation logic here, similar to previous script's handlers]
-                # This part calls interp1d, RegularGridInterpolator, griddata, or Rbf based on mode/method
-                # Make sure to handle fill_value_str correctly based on context
-                # ...
-                values_new = None # Placeholder - this needs the actual calculation
-                st.info("Executing SciPy interpolation...") # Placeholder feedback
-
-                # --- Example Placeholder Calculation (Replace with actual logic) ---
-                if points_new_array is not None:
-                    if mode == '1d':
-                        interpolator, _, _ = setup_1d_interpolator(df, x_col, y_col, method, extrapolate, fill_value_str)
-                        values_new = interpolator(points_new_array)
-                    else:
-                        # Placeholder for ND - requires full implementation based on mode/method
-                        values_new = np.random.rand(len(points_new_array)) * 10 # Fake results for now
-                        st.warning("N-D Interpolation logic needs full implementation in this section.")
-
-
-                # --- Combine results into DataFrame ---
-                if values_new is not None:
-                    if points_new_array.ndim == 1: points_new_array = points_new_array.reshape(-1, 1)
-                    output_data = np.hstack((points_new_array, values_new.reshape(-1, 1)))
-                    headers = [f"{h}_interp" for h in coord_names_list] + [f"{settings['value_col_name']}_interp"]
-                    results_df = pd.DataFrame(output_data, columns=headers)
-
-            except ValueError as ve: st.error(f"Interpolation Value Error: {ve}"); error_occurred = True
-            except RuntimeError as re: st.error(f"Interpolation Runtime Error: {re}"); error_occurred = True
-            except Exception as e: st.error(f"Unexpected interpolation error: {e}"); error_occurred = True
-
-        # --- Display Results & Download ---
-        if results_df is not None and not error_occurred:
-            st.success("Interpolation completed!")
-            st.write("Preview of Interpolated Results:")
-            st.dataframe(results_df.head(), use_container_width=True)
-            csv_results = results_df.to_csv(index=False).encode('utf-8')
-            default_interp_filename = f"interpolated_output_{mode}.csv"
-            st.download_button("Download Interpolation Results as CSV", csv_results, default_interp_filename, 'text/csv', type="primary")
-        elif not error_occurred:
-             st.warning("Interpolation did not produce results.")
-
-# ======================================================
-# === Goal 2: Evaluate Single Point (1D Only) Workflow ===
-# ======================================================
-elif "**Evaluate Single Point (1D Only)**" in interp_goal:
-    st.subheader("Evaluate Y for a Single X Value (1D Interpolation)")
-
-    cols_available = df.columns.tolist()
-    if not cols_available:
-        st.error("No columns found in the loaded data!")
-        st.stop()
-
-    eval_container = st.container(border=True)
-    with eval_container:
-        st.markdown("**1. Select 1D Data & Method**")
-        c1e, c2e, c3e = st.columns(3)
-        with c1e:
-             x_col_eval = st.selectbox("Select X column:", cols_available, index=None, placeholder="Select column...", key="xe_eval")
-        with c2e:
-             y_col_eval = st.selectbox("Select Y column:", cols_available, index=None, placeholder="Select column...", key="ye_eval")
-        with c3e:
-             method_eval = st.selectbox("Interpolation Method:", ['linear', 'cubic', 'quadratic', 'slinear', 'nearest', 'zero'], index=0, key="methe_eval")
-
-        # Only show next steps if columns selected
-        if x_col_eval and y_col_eval:
-            st.markdown("**2. Extrapolation & Input**")
-            c1e2, c2e2 = st.columns(2)
-            with c1e2:
-                extrapolate_eval = st.checkbox("Allow Extrapolation?", value=False, help="Allow prediction outside the range of your X data?", key="extrape_eval")
-            with c2e2:
-                 x_value_eval = st.number_input("Enter the X value to evaluate:", value=None, format="%f", placeholder="Enter X...", help="The specific X point where you want to predict Y.")
-
-            if x_value_eval is not None:
-                 if st.button("Predict Y Value", type="primary", key="pred_button"):
-                     with st.spinner("Calculating..."):
-                         try:
-                             # Use the helper to setup interpolator (fill='nan' for eval if no extrap)
-                             fill_eval = 'nan' # Default to NaN if out of bounds and no extrap
-                             interpolator, x_min, x_max = setup_1d_interpolator(df, x_col_eval, y_col_eval, method_eval, extrapolate_eval, fill_eval)
-
-                             # Check bounds if extrapolation is off
-                             if not extrapolate_eval and (x_value_eval < x_min or x_value_eval > x_max):
-                                 st.error(f"Input X ({x_value_eval}) is outside the data range [{x_min:.4g}, {x_max:.4g}] and extrapolation is disallowed.")
-                             else:
-                                 # Perform the prediction
-                                 y_predicted = interpolator(x_value_eval)
-                                 st.success(f"Predicted Y value for X = {x_value_eval}:")
-                                 st.metric(label=f"Predicted {y_col_eval}", value=f"{float(y_predicted):.4f}") # Format output
-
-                         except ValueError as ve:
-                             st.error(f"Error during prediction setup: {ve}")
-                         except Exception as e:
-                             st.error(f"An unexpected error occurred: {e}")
-            else:
-                 st.info("Enter an X value to predict its corresponding Y.")
+            x_col = c1.selectbox("X column (independent):", cols, index=None,
+                                  placeholder="Select…", key="x_down")
+            y_col = c2.selectbox("Y column (dependent):", cols, index=None,
+                                  placeholder="Select…", key="y_down")
+            coord_names = [x_col] if x_col else []
         else:
-            st.info("Select X and Y columns first.")
+            coord_cols = st.multiselect("Coordinate columns (order matters):", cols, key="coord_down")
+            value_col = st.selectbox("Value column:", cols, index=None,
+                                      placeholder="Select…", key="val_down")
+            coord_names = coord_cols or []
+
+    input_ok = (mode == '1d' and x_col and y_col) or (mode != '1d' and coord_cols and value_col)
+    if not input_ok:
+        st.info("Select the required input columns above.")
+        st.stop()
+
+    st.subheader("2. Method")
+    rbf_params = {}
+    with st.container(border=True):
+        if mode == '1d':
+            method = st.selectbox("Method:", ['linear', 'cubic', 'quadratic', 'slinear', 'nearest', 'zero'], key="m_1d")
+        elif mode == 'grid':
+            method = st.selectbox("Method:", ['linear', 'nearest'], key="m_grid")
+            st.caption("N-D Grid mode uses griddata; 'linear' recommended for most datasets.")
+        else:
+            method = st.selectbox("Method:", ['linear', 'cubic', 'nearest', 'rbf'], key="m_scat")
+            if method == 'rbf':
+                with st.expander("RBF options"):
+                    rbf_params['function'] = st.selectbox(
+                        "Kernel:",
+                        ['multiquadric', 'inverse', 'gaussian', 'linear', 'cubic', 'quintic', 'thin_plate'],
+                    )
+                    rbf_params['epsilon'] = st.number_input("Epsilon (> 0):", min_value=1e-9, value=1.0, format="%f")
+                    rbf_params['smooth'] = st.number_input("Smooth (0 = exact fit):", min_value=0.0, value=0.0, format="%f")
+
+        with st.expander("Extrapolation & fill"):
+            extrapolate = st.checkbox("Allow extrapolation", value=False, key="extrap_down")
+            fill_opts = ['nan']
+            if mode == '1d' and extrapolate:
+                fill_opts.append('edge')
+            fill_opts.append('number')
+            fill_choice = st.selectbox("Fill value for out-of-range points:", fill_opts, key="fill_down")
+            fill_str = fill_choice
+            if fill_choice == 'number':
+                fill_str = str(st.number_input("Numeric fill value:", value=0.0, format="%f", key="fill_num_down"))
+
+    st.subheader("3. Output points")
+    n_coords = 1 if mode == '1d' else len(coord_cols)
+    src_options = ["Upload file"]
+    if mode == '1d':
+        src_options += ["Evenly spaced", "Fixed step size"]
+    else:
+        src_options.append("Define grid")
+
+    num_pts = step_val = grid_spec = None
+    upload_obj = None
+    pts_file_cols = None
+    pts_delimiter = ','
+    pts_header = 0
+
+    with st.container(border=True):
+        source = st.selectbox("Point source:", src_options, key="src_down")
+
+        if source == "Upload file":
+            upload_obj = st.file_uploader("Points file (CSV/Excel/Txt)",
+                                           type=['csv', 'xlsx', 'xls', 'txt'], key="pts_upload")
+            if upload_obj:
+                c1, c2 = st.columns(2)
+                pts_delimiter = c1.text_input("Delimiter", value=',', key="pts_delim")
+                if pts_delimiter == '\\t':
+                    pts_delimiter = '\t'
+                pts_header = c2.number_input("Header row", min_value=0, value=0, step=1, key="pts_hdr")
+                try:
+                    preview = pd.read_csv(upload_obj, delimiter=pts_delimiter,
+                                          header=pts_header, skipinitialspace=True, nrows=5)
+                    st.dataframe(preview, use_container_width=True)
+                    file_cols = preview.columns.tolist()
+                    if mode == '1d':
+                        pts_file_cols = st.selectbox(f"Column for X ({x_col}):", file_cols, key="pts_xcol")
+                    else:
+                        sel = st.multiselect(
+                            f"Select {n_coords} coordinate column(s):", file_cols,
+                            default=file_cols[:n_coords], key="pts_ndcols",
+                        )
+                        pts_file_cols = sel if len(sel) == n_coords else None
+                        if len(sel) != n_coords:
+                            st.warning(f"Select exactly {n_coords} column(s).")
+                    upload_obj.seek(0)
+                except Exception as e:
+                    st.error(f"Error reading file: {e}")
+
+        elif source == "Evenly spaced":
+            num_pts = st.number_input("Number of points:", min_value=2, value=100, step=10, key="npts")
+
+        elif source == "Fixed step size":
+            step_val = st.number_input("Step size:", min_value=1e-9, value=1.0, format="%f", key="step")
+
+        elif source == "Define grid":
+            st.write(f"Grid for {n_coords} dimension(s) ({', '.join(coord_names)}):")
+            specs, valid = [], True
+            for i in range(n_coords):
+                gc1, gc2, gc3 = st.columns(3)
+                g_min = gc1.number_input(f"Min (dim {i+1})", value=0.0, format="%f", key=f"gmin_{i}")
+                g_max = gc2.number_input(f"Max (dim {i+1})", value=1.0, format="%f", key=f"gmax_{i}")
+                g_n = gc3.number_input(f"Points (dim {i+1})", min_value=2, value=20, step=1, key=f"gn_{i}")
+                if g_max <= g_min:
+                    gc2.warning("Max must be > Min")
+                    valid = False
+                specs.append(f"{g_min}:{g_max}:{g_n}")
+            grid_spec = ','.join(specs) if valid else None
+
+    st.subheader("4. Run")
+    run_disabled = (
+        not method
+        or (source == "Upload file" and (not upload_obj or not pts_file_cols))
+        or (source == "Define grid" and not grid_spec)
+    )
+
+    if st.button("Run Interpolation & Download", type="primary", disabled=run_disabled):
+        with st.spinner("Interpolating…"):
+            try:
+                if mode == '1d':
+                    f, x_min, x_max = build_1d_interpolator(
+                        df, x_col, y_col, method, extrapolate, fill_str
+                    )
+                    if source == "Upload file":
+                        full = pd.read_csv(upload_obj, delimiter=pts_delimiter,
+                                           header=pts_header, skipinitialspace=True)
+                        x_new = pd.to_numeric(full[pts_file_cols], errors='coerce').values
+                    else:
+                        x_new = _generate_1d_points(
+                            'num_points' if source == "Evenly spaced" else 'step',
+                            x_min, x_max, num_pts, step_val,
+                        )
+                    y_new = f(x_new)
+                    result_df = pd.DataFrame({f"{x_col}_interp": x_new, f"{y_col}_interp": y_new})
+
+                else:  # N-D scattered or grid
+                    pts_known, vals_known = _nd_known_points(df, coord_cols, value_col)
+                    if len(pts_known) == 0:
+                        raise ValueError("No valid data points after removing NaN rows.")
+
+                    if source == "Upload file":
+                        full = pd.read_csv(upload_obj, delimiter=pts_delimiter,
+                                           header=pts_header, skipinitialspace=True)
+                        pts_new = full[pts_file_cols].apply(pd.to_numeric, errors='coerce').values
+                    else:
+                        pts_new = _generate_nd_grid(grid_spec)
+
+                    fill_num = _parse_fill(fill_str)
+
+                    if method == 'rbf':
+                        rbf_fn = Rbf(*pts_known.T, vals_known, **rbf_params)
+                        vals_new = rbf_fn(*pts_new.T)
+                    else:
+                        vals_new = griddata(pts_known, vals_known, pts_new,
+                                            method=method, fill_value=fill_num)
+
+                    coord_hdrs = [f"{c}_interp" for c in coord_names]
+                    result_df = pd.DataFrame(pts_new, columns=coord_hdrs)
+                    result_df[f"{value_col}_interp"] = vals_new
+
+                st.success(f"Done — {len(result_df):,} interpolated points.")
+                st.dataframe(result_df.head(), use_container_width=True)
+                st.download_button(
+                    "Download CSV",
+                    data=result_df.to_csv(index=False).encode('utf-8'),
+                    file_name=f"interpolated_{mode}.csv",
+                    mime='text/csv',
+                    type="primary",
+                )
+
+            except ValueError as e:
+                st.error(f"Interpolation error: {e}")
+            except Exception as e:
+                st.error(f"Unexpected error: {e}")
 
 
-# Display current data preview at the end (Optional for this page)
-# st.divider()
-# st.subheader("Current Data Preview (Read-Only)")
-# st.dataframe(st.session_state.df.head(), use_container_width=True)
+# ── Goal 2: Evaluate single point (1D) ───────────────────────────────────────
+else:
+    st.subheader("Evaluate Y for a single X value (1D)")
+
+    cols = df.columns.tolist()
+    with st.container(border=True):
+        c1, c2, c3 = st.columns(3)
+        x_col = c1.selectbox("X column:", cols, index=None, placeholder="Select…", key="x_eval")
+        y_col = c2.selectbox("Y column:", cols, index=None, placeholder="Select…", key="y_eval")
+        method = c3.selectbox("Method:", ['linear', 'cubic', 'quadratic', 'slinear', 'nearest', 'zero'], key="m_eval")
+
+    if x_col and y_col:
+        c1, c2 = st.columns(2)
+        extrapolate = c1.checkbox("Allow extrapolation", value=False, key="extrap_eval")
+        x_val = c2.number_input("X value:", value=None, format="%f",
+                                  placeholder="Enter X…", key="xval_eval")
+        if x_val is not None:
+            if st.button("Predict Y", type="primary", key="predict_btn"):
+                with st.spinner("Calculating…"):
+                    try:
+                        f, x_min, x_max = build_1d_interpolator(
+                            df, x_col, y_col, method, extrapolate, 'nan'
+                        )
+                        if not extrapolate and (x_val < x_min or x_val > x_max):
+                            st.error(
+                                f"X={x_val} is outside the data range "
+                                f"[{x_min:.4g}, {x_max:.4g}]. "
+                                "Enable extrapolation to predict outside this range."
+                            )
+                        else:
+                            st.metric(f"Predicted {y_col}", f"{float(f(x_val)):.4f}")
+                    except ValueError as e:
+                        st.error(f"Error: {e}")
+                    except Exception as e:
+                        st.error(f"Unexpected error: {e}")
+        else:
+            st.info("Enter an X value to predict.")
+    else:
+        st.info("Select X and Y columns.")
